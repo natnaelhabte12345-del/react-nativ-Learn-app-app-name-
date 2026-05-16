@@ -1,3 +1,4 @@
+import { Link } from "expo-router";
 import { Image, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -64,6 +65,20 @@ export default function Index() {
         showsVerticalScrollIndicator={false}
       >
         <View className="gap-5">
+          <View className="ds-card ds-card-padding">
+            <Text className="text-h3 font-poppins-semibold text-text-primary">
+              Screens
+            </Text>
+            <Text className="mt-2 text-body-md font-poppins-regular text-text-secondary">
+              Open the onboarding screen built from the attached reference.
+            </Text>
+            <Link href="/onboarding" asChild>
+              <Text className="mt-5 text-body-lg font-poppins-semibold text-lingua-deep-purple">
+                Go to onboarding
+              </Text>
+            </Link>
+          </View>
+
           <View className="gap-5 xl:flex-row">
             <View className="flex-1 ds-card ds-card-padding">
               <SectionHeader title="Brand" />

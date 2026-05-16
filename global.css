@@ -107,3 +107,12 @@
   font-size: 12px;
   line-height: 18px;
 }
+
+@utility ff-primary-button {
+  background-color: var(--color-lingua-deep-purple);
+  border-radius: 24px;
+}
+
+@utility ff-bubble {
+  border-radius: 20px;
+}
