@@ -1,8 +1,9 @@
 {
   "expo": {
     "name": "Dualingo.clone",
-    "slug": "Dualingo.clone",
+    "slug": "dualingo-clone",
     "version": "1.0.0",
+    "sdkVersion": "54.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "dualingoclone",
@@ -34,7 +35,9 @@
             "imageWidth": 76
           }
         }
-      ]
+      ],
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

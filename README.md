@@ -13,12 +13,17 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
 2. Start the app
 
    ```bash
-   npx expo start
+   npm start
    ```
 
-In the output, you'll find options to open the app in a
+This project is pinned to Expo SDK 54 and `npm start` launches Expo Go through a tunnel:
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
+```bash
+expo start --tunnel --go
+```
+
+In the output, you'll find options to open the app in
+
 - [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
 - [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
 - [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo

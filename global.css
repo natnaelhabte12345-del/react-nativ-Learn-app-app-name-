@@ -1,0 +1,109 @@
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css";
+
+@import "nativewind/theme";
+
+@theme {
+  --color-lingua-purple: #6c4ef5;
+  --color-lingua-deep-purple: #5b3bf6;
+  --color-lingua-blue: #4d8bff;
+  --color-lingua-green: #21c16b;
+  --color-success: #21c16b;
+  --color-warning: #ffc800;
+  --color-streak: #ff8a00;
+  --color-error: #ff4d4f;
+  --color-info: #4d8bff;
+  --color-text-primary: #0d132b;
+  --color-text-secondary: #6b7280;
+  --color-border: #e5e7eb;
+  --color-surface: #f6f7fb;
+  --color-background: #ffffff;
+  --color-divider: #dde3ef;
+  --color-shadow: rgb(13 19 43 / 0.04);
+
+  --font-sans: "Poppins-Regular";
+
+  --text-h1: 32px;
+  --text-h1--line-height: 38.4px;
+  --text-h2: 24px;
+  --text-h2--line-height: 31.2px;
+  --text-h3: 20px;
+  --text-h3--line-height: 26px;
+  --text-h4: 16px;
+  --text-h4--line-height: 22.4px;
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 25.6px;
+  --text-body-md: 14px;
+  --text-body-md--line-height: 22.4px;
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 20.8px;
+  --text-caption: 11px;
+  --text-caption--line-height: 15.4px;
+}
+
+@utility font-poppins-regular {
+  font-family: "Poppins-Regular";
+}
+
+@utility font-poppins-medium {
+  font-family: "Poppins-Medium";
+}
+
+@utility font-poppins-semibold {
+  font-family: "Poppins-SemiBold";
+}
+
+@utility font-poppins-bold {
+  font-family: "Poppins-Bold";
+}
+
+@utility ds-screen {
+  background-color: var(--color-surface);
+}
+
+@utility ds-card {
+  background-color: var(--color-background);
+  border-width: 1px;
+  border-color: #eef2f7;
+  border-radius: 28px;
+}
+
+@utility ds-card-padding {
+  padding: 28px;
+}
+
+@utility ds-section-title {
+  color: var(--color-lingua-deep-purple);
+  font-family: "Poppins-Bold";
+  font-size: 20px;
+  line-height: 24px;
+  text-transform: uppercase;
+}
+
+@utility ds-divider {
+  height: 1px;
+  background-color: var(--color-divider);
+}
+
+@utility ds-muted {
+  color: var(--color-text-secondary);
+  font-family: "Poppins-Regular";
+  font-size: 14px;
+  line-height: 22px;
+}
+
+@utility ds-token-label {
+  color: var(--color-text-secondary);
+  font-family: "Poppins-SemiBold";
+  font-size: 13px;
+  line-height: 18px;
+  text-transform: uppercase;
+}
+
+@utility ds-token-meta {
+  color: var(--color-text-secondary);
+  font-family: "Poppins-Regular";
+  font-size: 12px;
+  line-height: 18px;
+}
