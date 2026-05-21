@@ -81,7 +81,7 @@ export default function OnboardingScreen() {
         </View>
 
         <View className="pt-4">
-          <Link href="/" asChild>
+          <Link href="/sign-up" asChild>
             <TouchableOpacity
               activeOpacity={0.9}
               className="ff-primary-button flex-row items-center justify-center py-5"

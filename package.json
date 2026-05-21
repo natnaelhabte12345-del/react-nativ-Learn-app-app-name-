@@ -3,11 +3,8 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "start": "expo start --tunnel --go",
-    "start:lan": "expo start --lan --go",
-    "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --tunnel --go --android",
-    "ios": "expo start --tunnel --go --ios",
+    "start": "expo start --lan --go",
+    "start:localhost": "expo start --localhost --go",
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit"
@@ -47,6 +44,7 @@
     "@types/react": "~19.1.10",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~10.0.0",
+    "ngrok": "^4.3.3",
     "postcss": "^8.5.14",
     "tailwindcss": "^4.3.0",
     "typescript": "~5.9.2"
