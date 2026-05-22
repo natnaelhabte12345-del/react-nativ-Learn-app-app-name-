@@ -1,6 +1,9 @@
+import { useAuth, useSignIn, useSignUp, useSSO } from "@clerk/expo";
+import * as Linking from "expo-linking";
 import { router, type Href } from "expo-router";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import {
+  Alert,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -13,8 +16,11 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as WebBrowser from "expo-web-browser";
 
 import { images } from "@/constants/images";
+
+WebBrowser.maybeCompleteAuthSession();
 
 type AuthMode = "sign-in" | "sign-up";
 
@@ -59,16 +65,31 @@ const authCopy: Record<AuthMode, AuthCopy> = {
 };
 
 const socialOptions = [
-  { label: "Continue with Google", provider: "google" },
-  { label: "Continue with Facebook", provider: "facebook" },
-  { label: "Continue with Apple", provider: "apple" },
+  { label: "Continue with Google", provider: "google", strategy: "oauth_google" },
+  {
+    label: "Continue with Facebook",
+    provider: "facebook",
+    strategy: "oauth_facebook",
+  },
+  { label: "Continue with Apple", provider: "apple", strategy: "oauth_apple" },
 ] as const;
 
 export function AuthScreen({ mode }: AuthScreenProps) {
   const copy = authCopy[mode];
+  const { isSignedIn } = useAuth();
+  const { signIn, fetchStatus: signInFetchStatus } = useSignIn();
+  const { signUp, fetchStatus: signUpFetchStatus } = useSignUp();
+  const { startSSOFlow } = useSSO();
+  const [email, setEmail] = useState(copy.email);
+  const [password, setPassword] = useState("password");
   const [isModalVisible, setModalVisible] = useState(false);
+  const [isSubmittingCode, setSubmittingCode] = useState(false);
   const [code, setCode] = useState("");
   const codeInputRef = useRef<TextInput>(null);
+  const isSubmitting =
+    signInFetchStatus === "fetching" ||
+    signUpFetchStatus === "fetching" ||
+    isSubmittingCode;
 
   const showVerification = () => {
     setCode("");
@@ -80,8 +101,183 @@ export function AuthScreen({ mode }: AuthScreenProps) {
     setCode(nextCode);
 
     if (nextCode.length === CODE_LENGTH) {
-      setModalVisible(false);
-      router.replace("/");
+      void handleVerifyCode(nextCode);
+    }
+  };
+
+  const handleAuthError = (error: unknown) => {
+    Alert.alert("Authentication error", getErrorMessage(error));
+  };
+
+  const navigateHome = (href: string) => {
+    if (href.startsWith("http")) {
+      router.replace("/language-selection");
+      return;
+    }
+
+    router.replace(href as Href);
+  };
+
+  const finalizeSignIn = async () => {
+    const { error } = await signIn.finalize({
+      navigate: ({ session, decorateUrl }) => {
+        if (session.currentTask) {
+          Alert.alert(
+            "Action needed",
+            "Your Clerk session has a pending task. Check your Clerk dashboard configuration.",
+          );
+          return;
+        }
+
+        navigateHome(decorateUrl("/language-selection"));
+      },
+    });
+
+    if (error) {
+      handleAuthError(error);
+    }
+  };
+
+  const finalizeSignUp = async () => {
+    const { error } = await signUp.finalize({
+      navigate: ({ session, decorateUrl }) => {
+        if (session.currentTask) {
+          Alert.alert(
+            "Action needed",
+            "Your Clerk session has a pending task. Check your Clerk dashboard configuration.",
+          );
+          return;
+        }
+
+        navigateHome(decorateUrl("/language-selection"));
+      },
+    });
+
+    if (error) {
+      handleAuthError(error);
+    }
+  };
+
+  const handleEmailAuth = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
+    try {
+      if (mode === "sign-up") {
+        const { error } = await signUp.password({
+          emailAddress: email.trim(),
+          password,
+        });
+
+        if (error) {
+          handleAuthError(error);
+          return;
+        }
+
+        const { error: verificationError } =
+          await signUp.verifications.sendEmailCode();
+
+        if (verificationError) {
+          handleAuthError(verificationError);
+          return;
+        }
+
+        showVerification();
+        return;
+      }
+
+      const { error } = await signIn.emailCode.sendCode({
+        emailAddress: email.trim(),
+      });
+
+      if (error) {
+        handleAuthError(error);
+        return;
+      }
+
+      showVerification();
+    } catch (error) {
+      handleAuthError(error);
+    }
+  };
+
+  const handleVerifyCode = async (verificationCode: string) => {
+    if (isSubmittingCode) {
+      return;
+    }
+
+    setSubmittingCode(true);
+
+    try {
+      if (mode === "sign-up") {
+        const { error } = await signUp.verifications.verifyEmailCode({
+          code: verificationCode,
+        });
+
+        if (error) {
+          handleAuthError(error);
+          return;
+        }
+
+        if (signUp.status === "complete") {
+          setModalVisible(false);
+          await finalizeSignUp();
+          return;
+        }
+
+        Alert.alert("Verification incomplete", "Please request a new code and try again.");
+        return;
+      }
+
+      const { error } = await signIn.emailCode.verifyCode({
+        code: verificationCode,
+      });
+
+      if (error) {
+        handleAuthError(error);
+        return;
+      }
+
+      if (signIn.status === "complete") {
+        setModalVisible(false);
+        await finalizeSignIn();
+        return;
+      }
+
+      Alert.alert("Verification incomplete", "Please request a new code and try again.");
+    } catch (error) {
+      handleAuthError(error);
+    } finally {
+      setSubmittingCode(false);
+    }
+  };
+
+  const handleSocialAuth = async (
+    strategy: (typeof socialOptions)[number]["strategy"],
+  ) => {
+    if (isSubmitting) {
+      return;
+    }
+
+    try {
+      const { createdSessionId, setActive } = await startSSOFlow({
+        strategy,
+        redirectUrl: Linking.createURL("oauth-callback"),
+      });
+
+      if (createdSessionId && setActive) {
+        await setActive({ session: createdSessionId });
+        router.replace("/language-selection");
+        return;
+      }
+
+      Alert.alert(
+        "Authentication incomplete",
+        "Clerk did not create a session. Check that this social provider is enabled in your Clerk dashboard.",
+      );
+    } catch (error) {
+      handleAuthError(error);
     }
   };
 
@@ -93,6 +289,12 @@ export function AuthScreen({ mode }: AuthScreenProps) {
     const timer = setTimeout(() => codeInputRef.current?.focus(), 250);
     return () => clearTimeout(timer);
   }, [isModalVisible]);
+
+  useEffect(() => {
+    if (isSignedIn) {
+      router.replace("/language-selection");
+    }
+  }, [isSignedIn]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -152,11 +354,12 @@ export function AuthScreen({ mode }: AuthScreenProps) {
             </Text>
             <TextInput
               autoCapitalize="none"
-              defaultValue={copy.email}
               keyboardType="email-address"
+              onChangeText={setEmail}
               placeholder="Email"
               placeholderTextColor="#0D132B"
               style={styles.input}
+              value={email}
             />
           </View>
 
@@ -167,11 +370,12 @@ export function AuthScreen({ mode }: AuthScreenProps) {
                   Password
                 </Text>
                 <TextInput
-                  defaultValue="password"
+                  onChangeText={setPassword}
                   placeholder="Password"
                   placeholderTextColor="#0D132B"
                   secureTextEntry
                   style={styles.input}
+                  value={password}
                 />
               </View>
               <Text className="text-[26px] leading-[30px] text-[#7b849f]">
@@ -183,7 +387,8 @@ export function AuthScreen({ mode }: AuthScreenProps) {
           <TouchableOpacity
             activeOpacity={0.9}
             className="mt-1 items-center justify-center rounded-[16px] bg-lingua-deep-purple py-[15px]"
-            onPress={showVerification}
+            disabled={isSubmitting}
+            onPress={handleEmailAuth}
           >
             <Text className="text-[22px] leading-[28px] font-poppins-semibold text-white">
               {copy.primaryAction}
@@ -205,7 +410,8 @@ export function AuthScreen({ mode }: AuthScreenProps) {
               activeOpacity={0.85}
               className="h-[55px] flex-row items-center rounded-[17px] border border-[#eef0f6] bg-white"
               key={option.label}
-              onPress={showVerification}
+              disabled={isSubmitting}
+              onPress={() => handleSocialAuth(option.strategy)}
             >
               <View style={styles.socialIconSlot}>
                 <SocialIcon provider={option.provider} />
@@ -230,6 +436,8 @@ export function AuthScreen({ mode }: AuthScreenProps) {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {mode === "sign-up" ? <View nativeID="clerk-captcha" /> : null}
       </ScrollView>
 
       <VerificationModal
@@ -349,6 +557,20 @@ function VerificationModal({
       </KeyboardAvoidingView>
     </Modal>
   );
+}
+
+function getErrorMessage(error: unknown) {
+  if (error && typeof error === "object") {
+    if ("longMessage" in error && typeof error.longMessage === "string") {
+      return error.longMessage;
+    }
+
+    if ("message" in error && typeof error.message === "string") {
+      return error.message;
+    }
+  }
+
+  return "Something went wrong. Please try again.";
 }
 
 const styles = StyleSheet.create({

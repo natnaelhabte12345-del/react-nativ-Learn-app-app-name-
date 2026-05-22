@@ -1,7 +1,16 @@
 export const images = {
   appleAuthLogo: require("@/assets/images/apple-auth-logo.png"),
+  earth: require("@/assets/images/earth.png"),
+  flagChinese: require("@/assets/images/flags/flag-chinese.png"),
+  flagFrench: require("@/assets/images/flags/flag-french.png"),
+  flagGerman: require("@/assets/images/flags/flag-german.png"),
+  flagJapanese: require("@/assets/images/flags/flag-japanese.png"),
+  flagKorean: require("@/assets/images/flags/flag-korean.png"),
+  flagSpanish: require("@/assets/images/flags/flag-spanish.png"),
   googleAuthLogo: require("@/assets/images/google-auth-logo.png"),
+  languageWorld: require("@/assets/images/language-world-full.png"),
   mascotAuth: require("@/assets/images/mascot-auth.png"),
   mascotLogo: require("@/assets/images/moscot-logo.png"),
   mascotWelcome: require("@/assets/images/mascot-welcome.png"),
+  seeAllLanguagesButton: require("@/assets/images/see-all-languages-button.png"),
 };
