@@ -41,10 +41,13 @@ export function PushTokenRegistrar() {
 ## Send Notification to User (Server)
 
 ```tsx
-import { clerkClient } from '@clerk/nextjs/server'
+import { createClerkClient } from '@clerk/backend'
+
+const client = createClerkClient({
+  secretKey: process.env.CLERK_SECRET_KEY,
+})
 
 async function sendNotification(userId: string, title: string, body: string) {
-  const client = await clerkClient()
   const user = await client.users.getUser(userId)
   const token = user.unsafeMetadata?.expoPushToken as string | undefined
 

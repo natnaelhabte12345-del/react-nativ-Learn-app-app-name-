@@ -192,11 +192,11 @@ export default function Page() {
   const router = useRouter()
 
   const handleSubmit = async (formData: FormData) => {
-    const emailAddress = formData.get('email') as string
+    const identifier = formData.get('email') as string
     const password = formData.get('password') as string
 
     await signIn.password({
-      emailAddress,
+      identifier,
       password,
     })
 

@@ -29,7 +29,6 @@ type AuthScreenProps = {
 };
 
 type AuthCopy = {
-  email: string;
   footerAction: string;
   footerHref: Href;
   footerText: string;
@@ -45,7 +44,6 @@ const authCopy: Record<AuthMode, AuthCopy> = {
   "sign-up": {
     title: "Create your account",
     subtitle: "Start your language journey today",
-    email: "alex@gmail.com",
     primaryAction: "Sign Up",
     footerText: "Already have an account?",
     footerAction: "Log in",
@@ -55,7 +53,6 @@ const authCopy: Record<AuthMode, AuthCopy> = {
   "sign-in": {
     title: "Welcome back",
     subtitle: "Continue your language journey",
-    email: "alex@gmail.com",
     primaryAction: "Sign In",
     footerText: "Don't have an account?",
     footerAction: "Sign up",
@@ -80,8 +77,8 @@ export function AuthScreen({ mode }: AuthScreenProps) {
   const { signIn, fetchStatus: signInFetchStatus } = useSignIn();
   const { signUp, fetchStatus: signUpFetchStatus } = useSignUp();
   const { startSSOFlow } = useSSO();
-  const [email, setEmail] = useState(copy.email);
-  const [password, setPassword] = useState("password");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [isModalVisible, setModalVisible] = useState(false);
   const [isSubmittingCode, setSubmittingCode] = useState(false);
   const [code, setCode] = useState("");

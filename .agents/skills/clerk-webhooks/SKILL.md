@@ -107,9 +107,7 @@ Notification-only handlers still verify the signature. Same pattern as the datab
 // app/api/webhooks/route.ts
 import { verifyWebhook } from '@clerk/nextjs/webhooks'
 import { NextRequest } from 'next/server'
-import { Resend } from 'resend'
-
-const resend = new Resend(process.env.RESEND_API_KEY)
+import { enqueueWelcomeNotification } from '@/lib/jobs'
 
 export async function POST(req: NextRequest) {
   // Step 1: ALWAYS verify the webhook signature - NEVER skip this
@@ -121,6 +119,9 @@ export async function POST(req: NextRequest) {
     return new Response('Verification failed', { status: 400 })
   }
 
+  const eventId = req.headers.get('svix-id')
+  if (!eventId) return new Response('Missing event id', { status: 400 })
+
   // Step 2: Listen for user.created event
   if (evt.type === 'user.created') {
     // Step 3: Extract user email and name from webhook payload
@@ -128,26 +129,60 @@ export async function POST(req: NextRequest) {
     const email = email_addresses[0]?.email_address
     const name = `${first_name ?? ''} ${last_name ?? ''}`.trim()
 
-    // Step 4: Call Resend API to send welcome email
-    await resend.emails.send({
-      from: 'noreply@yourdomain.com',
-      to: email,
-      subject: 'Welcome!',
-      html: `<p>Hi ${name}, welcome to our app!</p>`,
-    })
-
-    // Step 5: Post notification to Slack channel
-    await fetch(process.env.SLACK_WEBHOOK_URL!, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: `New user signed up: ${name} (${email})`,
-      }),
+    // Step 4: Queue side effects and acknowledge the webhook immediately.
+    // The worker must dedupe by eventId before sending email or Slack notifications.
+    void enqueueWelcomeNotification({
+      eventId,
+      userId: id,
+      email,
+      name,
     })
   }
 
-  // Always return 200 to acknowledge receipt
+  // Always return 200 quickly. Do not block webhook acknowledgement on side effects.
   return new Response('OK', { status: 200 })
+}
+```
+
+Worker example:
+
+```typescript
+import { Resend } from 'resend'
+
+const resend = new Resend(process.env.RESEND_API_KEY)
+
+export async function processWelcomeNotification(job: {
+  eventId: string
+  userId: string
+  email?: string
+  name: string
+}) {
+  // Use durable storage in production. This represents a unique constraint on eventId.
+  const alreadyProcessed = await db.webhookEvents.findUnique({
+    where: { eventId: job.eventId },
+  })
+  if (alreadyProcessed) return
+
+  await db.webhookEvents.create({
+    data: { eventId: job.eventId, type: 'user.created', userId: job.userId },
+  })
+
+  if (job.email) {
+    await resend.emails.send({
+      from: 'noreply@yourdomain.com',
+      to: job.email,
+      subject: 'Welcome!',
+      html: `<p>Hi ${job.name}, welcome to our app!</p>`,
+    })
+  }
+
+  await fetch(process.env.SLACK_WEBHOOK_URL!, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: `New user signed up: ${job.name} (${job.email ?? 'no email'})`,
+    }),
+  })
 }
 ```
 

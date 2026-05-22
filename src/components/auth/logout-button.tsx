@@ -1,13 +1,18 @@
 import { useClerk } from "@clerk/expo";
 import { router } from "expo-router";
-import { Text, TouchableOpacity } from "react-native";
+import { Alert, Text, TouchableOpacity } from "react-native";
 
 export function LogoutButton() {
   const { signOut } = useClerk();
 
   const handleLogout = async () => {
-    await signOut();
-    router.replace("/onboarding");
+    try {
+      await signOut();
+      router.replace("/onboarding");
+    } catch (error) {
+      console.error("Failed to sign out", error);
+      Alert.alert("Could not log out", "Please try again in a moment.");
+    }
   };
 
   return (

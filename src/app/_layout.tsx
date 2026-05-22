@@ -91,8 +91,14 @@ function AuthRedirects() {
 
     const isAuthRoute = pathname === "/sign-in" || pathname === "/sign-up";
     const isOnboardingRoute = pathname === "/onboarding";
+    const isOAuthCallbackRoute = pathname === "/oauth-callback";
 
-    if (!isSignedIn && !isAuthRoute && !isOnboardingRoute) {
+    if (
+      !isSignedIn &&
+      !isAuthRoute &&
+      !isOnboardingRoute &&
+      !isOAuthCallbackRoute
+    ) {
       router.replace("/onboarding");
       return;
     }
