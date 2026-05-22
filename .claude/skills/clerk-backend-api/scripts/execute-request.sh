@@ -17,9 +17,16 @@ _dir="$PWD"
 while true; do
   for _envfile in "$_dir/.env" "$_dir/.env.local"; do
     if [[ -f "$_envfile" ]]; then
-      set -a
-      source "$_envfile"
-      set +a
+      while IFS='=' read -r key value; do
+        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+        case "$key" in
+          CLERK_SECRET_KEY|CLERK_BAPI_SCOPES|CLERK_REST_API_URL)
+            value="${value%$'\r'}"
+            value="${value#\"}"; value="${value%\"}"
+            export "$key=$value"
+            ;;
+        esac
+      done < <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$_envfile")
     fi
   done
   [[ -n "${CLERK_SECRET_KEY:-}" ]] && break

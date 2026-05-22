@@ -29,7 +29,6 @@ while true; do
       done < <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$_envfile")
     fi
   done
-  done
   [[ -n "${CLERK_SECRET_KEY:-}" ]] && break
   _parent="$(dirname "$_dir")"
   [[ "$_parent" == "$_dir" ]] && break
