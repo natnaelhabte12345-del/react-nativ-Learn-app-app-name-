@@ -1,10 +1,21 @@
-import { Link } from "expo-router";
+import { useAuth } from "@clerk/expo";
+import { Link, Redirect } from "expo-router";
 import { Image, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { images } from "@/constants/images";
 
 export default function OnboardingScreen() {
+  const { isLoaded, isSignedIn } = useAuth();
+
+  if (!isLoaded) {
+    return null;
+  }
+
+  if (isSignedIn) {
+    return <Redirect href="/language-selection" />;
+  }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
       <View className="flex-1 bg-background px-7 pt-3 pb-6">
@@ -81,7 +92,7 @@ export default function OnboardingScreen() {
         </View>
 
         <View className="pt-4">
-          <Link href="/" asChild>
+          <Link href="/sign-up" asChild>
             <TouchableOpacity
               activeOpacity={0.9}
               className="ff-primary-button flex-row items-center justify-center py-5"
