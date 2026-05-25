@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls node_modules/@expo/vector-icons)",
+      "Bash(ls node_modules/react-native-svg)",
+      "Bash(npx tsc *)"
+    ]
+  }
+}

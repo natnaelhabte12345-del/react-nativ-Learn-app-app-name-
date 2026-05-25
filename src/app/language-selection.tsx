@@ -1,5 +1,5 @@
 import { useAuth } from "@clerk/expo";
-import { Redirect, router } from "expo-router";
+import { Redirect, router, type Href } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   Image,
@@ -16,13 +16,25 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { images } from "@/constants/images";
 import { defaultLanguageId, languages } from "@/data/languages";
+import { useLanguageStore } from "@/store/language-store";
 import type { LanguageId, LearningLanguage } from "@/types/learning";
+
+const homeHref = "/" as Href;
 
 export default function LanguageSelectionScreen() {
   const { isLoaded, isSignedIn } = useAuth();
+  const hasHydrated = useLanguageStore((state) => state.hasHydrated);
+  const persistedLanguageId = useLanguageStore(
+    (state) => state.selectedLanguageId,
+  );
+  const setSelectedLanguage = useLanguageStore(
+    (state) => state.setSelectedLanguage,
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLanguageId, setSelectedLanguageId] =
-    useState<LanguageId>(defaultLanguageId);
+    useState<LanguageId | null>(null);
+  const visibleSelectedLanguageId =
+    selectedLanguageId ?? persistedLanguageId ?? defaultLanguageId;
 
   const visibleLanguages = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -36,7 +48,13 @@ export default function LanguageSelectionScreen() {
     );
   }, [searchQuery]);
 
-  if (!isLoaded) {
+  const handleSelectLanguage = (languageId: LanguageId) => {
+    setSelectedLanguageId(languageId);
+    setSelectedLanguage(languageId);
+    router.replace(homeHref);
+  };
+
+  if (!isLoaded || !hasHydrated) {
     return null;
   }
 
@@ -93,10 +111,10 @@ export default function LanguageSelectionScreen() {
         <View className="mt-3">
           {visibleLanguages.map((language, index) => (
             <LanguageRow
-              isSelected={language.id === selectedLanguageId}
+              isSelected={language.id === visibleSelectedLanguageId}
               key={language.id}
               language={language}
-              onSelect={() => setSelectedLanguageId(language.id)}
+              onSelect={() => handleSelectLanguage(language.id)}
               showDivider={index < visibleLanguages.length - 1}
             />
           ))}
