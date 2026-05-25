@@ -18,8 +18,6 @@ type TabConfig = {
   label: string;
 };
 
-const ACTIVE_COLOR = "#6E48F6";
-const INACTIVE_COLOR = "#7E849E";
 const BAR_MAX_WIDTH = 470;
 const BAR_HORIZONTAL_MARGIN = 12;
 const BAR_INNER_PADDING = 8;
@@ -65,15 +63,14 @@ export function CustomTabBar({
 
   return (
     <View
+      className="absolute bottom-0 left-0 right-0 items-center bg-transparent px-3 pt-2"
       pointerEvents="box-none"
-      style={[
-        styles.tabBarOuter,
-        {
-          paddingBottom: Math.max(insets.bottom, 10),
-        },
-      ]}
+      style={{ paddingBottom: Math.max(insets.bottom, 10) }}
     >
-      <View style={[styles.tabBar, { width: barWidth }]}>
+      <View
+        className="h-[86px] flex-row items-center rounded-[30px] bg-white px-2"
+        style={[styles.tabBarShadow, { width: barWidth }]}
+      >
         {routes.map((route, index) => {
           const config = tabConfigs[route.name] ?? tabConfigs.index;
           const isFocused = state.index === index;
@@ -98,10 +95,10 @@ export function CustomTabBar({
               accessibilityLabel={accessibilityLabel}
               accessibilityRole="button"
               accessibilityState={isFocused ? { selected: true } : {}}
+              className="z-[1] h-[76px] items-center justify-center pt-[6px]"
               key={route.key}
               onPress={onPress}
               style={({ pressed }) => [
-                styles.tabItem,
                 { opacity: pressed ? 0.72 : 1, width: itemWidth },
               ]}
             >
@@ -110,10 +107,9 @@ export function CustomTabBar({
                 size={27}
               />
               <Text
-                style={[
-                  styles.tabLabel,
-                  isFocused && styles.activeTabLabel,
-                ]}
+                className={`mt-[5px] text-center text-[11px] leading-4 font-poppins-semibold ${
+                  isFocused ? "text-[#6E48F6]" : "text-[#7E849E]"
+                }`}
               >
                 {config.label}
               </Text>
@@ -144,45 +140,11 @@ function TabIcon({ icon, size }: TabIconProps) {
 }
 
 const styles = StyleSheet.create({
-  activeTabLabel: {
-    color: ACTIVE_COLOR,
-  },
-  tabBar: {
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 30,
-    flexDirection: "row",
-    height: 86,
-    paddingHorizontal: BAR_INNER_PADDING,
+  tabBarShadow: {
     elevation: 12,
     shadowColor: "#0D132B",
     shadowOffset: { height: -4, width: 0 },
     shadowOpacity: 0.08,
     shadowRadius: 20,
-  },
-  tabBarOuter: {
-    alignItems: "center",
-    backgroundColor: "transparent",
-    bottom: 0,
-    left: 0,
-    paddingHorizontal: BAR_HORIZONTAL_MARGIN,
-    paddingTop: 8,
-    position: "absolute",
-    right: 0,
-  },
-  tabItem: {
-    alignItems: "center",
-    height: 76,
-    justifyContent: "center",
-    paddingTop: 6,
-    zIndex: 1,
-  },
-  tabLabel: {
-    color: INACTIVE_COLOR,
-    fontFamily: "Poppins-SemiBold",
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 5,
-    textAlign: "center",
   },
 });

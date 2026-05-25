@@ -63,11 +63,15 @@ export function HomeScreen() {
     languageLessons.length > 0
       ? languageLessons
       : lessons.filter((lesson) => lesson.languageId === defaultLanguageId);
-  const currentLesson = visibleLessons[1] ?? visibleLessons[0];
+  const currentLesson: Lesson | null =
+    visibleLessons[1] ?? visibleLessons[0] ?? null;
   const completedLesson = visibleLessons.length > 1 ? visibleLessons[0] : null;
   const currentUnit =
-    units.find((unit) => unit.id === currentLesson.unitId) ??
-    units.find((unit) => unit.languageId === selectedLanguage.id);
+    (currentLesson
+      ? units.find((unit) => unit.id === currentLesson.unitId)
+      : null) ??
+    units.find((unit) => unit.languageId === selectedLanguage.id) ??
+    null;
   const earnedXp = completedLesson
     ? Math.min(
         DAILY_GOAL_XP,
@@ -75,7 +79,7 @@ export function HomeScreen() {
           completedLesson.vocabulary.length +
           completedLesson.phrases.length,
       )
-    : Math.min(DAILY_GOAL_XP, currentLesson.vocabulary.length * 2);
+    : Math.min(DAILY_GOAL_XP, (currentLesson?.vocabulary.length ?? 0) * 2);
   const progress = earnedXp / DAILY_GOAL_XP;
   const displayName =
     user?.firstName ??
@@ -356,7 +360,11 @@ function NextUpCard() {
   );
 }
 
-function getLessonPlanSubtitle(lesson: Lesson) {
+function getLessonPlanSubtitle(lesson: Lesson | null) {
+  if (!lesson) {
+    return "No lesson available";
+  }
+
   const unitTitle = units.find((unit) => unit.id === lesson.unitId)?.title;
 
   if (unitTitle?.toLowerCase().includes("cafe")) {
