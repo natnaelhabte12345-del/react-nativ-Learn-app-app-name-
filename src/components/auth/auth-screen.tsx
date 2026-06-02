@@ -20,6 +20,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { images } from "@/constants/images";
+import { useLanguageStore } from "@/store/language-store";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -95,6 +96,9 @@ export function AuthScreen({ mode }: AuthScreenProps) {
     setModalVisible(true);
   };
 
+  const selectedLanguageId = useLanguageStore((s) => s.selectedLanguageId);
+  const hasHydrated = useLanguageStore((s) => s.hasHydrated);
+
   const handleCodeChange = (value: string) => {
     const nextCode = value.replace(/\D/g, "").slice(0, CODE_LENGTH);
     setCode(nextCode);
@@ -139,7 +143,8 @@ export function AuthScreen({ mode }: AuthScreenProps) {
         }
 
         trackSignInCompleted("code", session.user?.id);
-        navigateHome(decorateUrl("/language-selection"));
+        const target = hasHydrated && selectedLanguageId !== null ? "/" : "/language-selection";
+        navigateHome(decorateUrl(target));
       },
     });
 
@@ -159,7 +164,8 @@ export function AuthScreen({ mode }: AuthScreenProps) {
           return;
         }
 
-        navigateHome(decorateUrl("/language-selection"));
+        const target = hasHydrated && selectedLanguageId !== null ? "/" : "/language-selection";
+        navigateHome(decorateUrl(target));
       },
     });
 
@@ -198,7 +204,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
       }
 
       // Ensure a sign-in attempt exists before sending a code
-      const { error: createError } = await signIn.create({ identifier: email.trim() } as any);
+      const { error: createError } = await signIn.create({ identifier: email.trim() });
       if (createError) {
         handleAuthError(createError);
         return;
@@ -587,24 +593,33 @@ function VerificationModal({
   );
 }
 
+interface ClerkErrorDetail {
+  longMessage?: string;
+  message?: string;
+}
+
+interface ClerkErrorLike {
+  errors?: ClerkErrorDetail[];
+  longMessage?: string;
+  message?: string;
+}
+
+function isClerkErrorLike(obj: unknown): obj is ClerkErrorLike {
+  if (!obj || typeof obj !== "object") return false;
+  const anyObj = obj as Record<string, unknown>;
+  if (Array.isArray(anyObj.errors)) return true;
+  if (typeof anyObj.longMessage === "string") return true;
+  if (typeof anyObj.message === "string") return true;
+  return false;
+}
+
 function getErrorMessage(error: unknown) {
-  if (error && typeof error === "object") {
-    // Prefer nested Clerk Core v3 validation errors when present
-    const nested = (error as any).errors?.[0];
-    if (nested?.longMessage && typeof nested.longMessage === "string") {
-      return nested.longMessage;
-    }
-    if (nested?.message && typeof nested.message === "string") {
-      return nested.message;
-    }
-
-    if ("longMessage" in error && typeof (error as any).longMessage === "string") {
-      return (error as any).longMessage;
-    }
-
-    if ("message" in error && typeof (error as any).message === "string") {
-      return (error as any).message;
-    }
+  if (isClerkErrorLike(error)) {
+    const nested = error.errors && error.errors.length > 0 ? error.errors[0] : undefined;
+    if (nested?.longMessage) return nested.longMessage;
+    if (nested?.message) return nested.message;
+    if (error.longMessage) return error.longMessage;
+    if (error.message) return error.message;
   }
 
   return "Something went wrong. Please try again.";

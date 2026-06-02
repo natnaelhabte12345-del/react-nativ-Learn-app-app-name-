@@ -10,12 +10,13 @@ export default function OnboardingScreen() {
   const { isLoaded, isSignedIn } = useAuth();
 
   const selectedLanguageId = useLanguageStore((state) => state.selectedLanguageId);
+  const hasHydrated = useLanguageStore((state) => state.hasHydrated);
 
   if (!isLoaded) {
     return null;
   }
 
-  if (isSignedIn) {
+  if (isSignedIn && hasHydrated) {
     const hasSelectedLanguage = selectedLanguageId !== null;
     return <Redirect href={hasSelectedLanguage ? "/" : "/language-selection"} />;
   }
