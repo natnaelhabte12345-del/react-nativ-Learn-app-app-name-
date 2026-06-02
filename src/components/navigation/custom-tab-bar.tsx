@@ -20,7 +20,6 @@ type TabConfig = {
 
 const BAR_MAX_WIDTH = 470;
 const BAR_HORIZONTAL_MARGIN = 12;
-const BAR_INNER_PADDING = 8;
 
 const tabConfigs: Record<string, TabConfig> = {
   index: {
@@ -58,8 +57,9 @@ export function CustomTabBar({
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const routes = state.routes;
+  const visibleRoutes = routes.filter((route) => route.name in tabConfigs);
+  const focusedRouteKey = routes[state.index]?.key;
   const barWidth = Math.min(width - BAR_HORIZONTAL_MARGIN * 2, BAR_MAX_WIDTH);
-  const itemWidth = (barWidth - BAR_INNER_PADDING * 2) / routes.length;
 
   return (
     <View
@@ -71,9 +71,9 @@ export function CustomTabBar({
         className="h-[86px] flex-row items-center rounded-[30px] bg-white px-2"
         style={[styles.tabBarShadow, { width: barWidth }]}
       >
-        {routes.map((route, index) => {
+        {visibleRoutes.map((route) => {
           const config = tabConfigs[route.name] ?? tabConfigs.index;
-          const isFocused = state.index === index;
+          const isFocused = focusedRouteKey === route.key;
           const options = descriptors[route.key]?.options;
           const accessibilityLabel =
             options?.tabBarAccessibilityLabel ?? config.label;
@@ -95,11 +95,11 @@ export function CustomTabBar({
               accessibilityLabel={accessibilityLabel}
               accessibilityRole="button"
               accessibilityState={isFocused ? { selected: true } : {}}
-              className="z-[1] h-[76px] items-center justify-center pt-[6px]"
               key={route.key}
               onPress={onPress}
               style={({ pressed }) => [
-                { opacity: pressed ? 0.72 : 1, width: itemWidth },
+                styles.tabItem,
+                { opacity: pressed ? 0.72 : 1 },
               ]}
             >
               <TabIcon
@@ -107,9 +107,10 @@ export function CustomTabBar({
                 size={27}
               />
               <Text
-                className={`mt-[5px] text-center text-[11px] leading-4 font-poppins-semibold ${
+                className={`mt-[5px] w-full text-center text-[11px] leading-4 font-poppins-semibold ${
                   isFocused ? "text-[#6E48F6]" : "text-[#7E849E]"
                 }`}
+                numberOfLines={1}
               >
                 {config.label}
               </Text>
@@ -140,6 +141,15 @@ function TabIcon({ icon, size }: TabIconProps) {
 }
 
 const styles = StyleSheet.create({
+  tabItem: {
+    alignItems: "center",
+    flex: 1,
+    height: 76,
+    justifyContent: "center",
+    minWidth: 0,
+    paddingTop: 6,
+    zIndex: 1,
+  },
   tabBarShadow: {
     elevation: 12,
     shadowColor: "#0D132B",

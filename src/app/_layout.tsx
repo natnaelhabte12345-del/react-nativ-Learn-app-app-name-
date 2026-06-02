@@ -1,17 +1,26 @@
-import "../../global.css";
 import { ClerkProvider, useAuth } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
 import { useFonts } from "expo-font";
-import { router, Stack, type Href, usePathname } from "expo-router";
+import {
+  router,
+  Stack,
+  useGlobalSearchParams,
+  usePathname,
+  type Href,
+} from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect } from "react";
+import { PostHogProvider, usePostHog } from "posthog-react-native";
+import { useEffect, useRef } from "react";
 import { Text, View } from "react-native";
+import "../../global.css";
 
 import { useLanguageStore } from "@/store/language-store";
 
 SplashScreen.preventAutoHideAsync();
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
+const posthogKey = process.env.EXPO_PUBLIC_POSTHOG_KEY ?? "";
+const posthogHost = process.env.EXPO_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com";
 const homeHref = "/" as Href;
 
 export default function RootLayout() {
@@ -37,10 +46,22 @@ export default function RootLayout() {
   }
 
   return (
-    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
-      <AuthRedirects />
-      <Stack screenOptions={{ headerShown: false }} />
-    </ClerkProvider>
+    <PostHogProvider
+      apiKey={posthogKey}
+      options={{ host: posthogHost }}
+      autocapture={{
+        captureScreens: false,
+        captureTouches: true,
+        propsToCapture: ["testID"],
+        maxElementsCaptured: 20,
+      }}
+    >
+      <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+        <AuthRedirects />
+        <PostHogScreenTracker />
+        <Stack screenOptions={{ headerShown: false }} />
+      </ClerkProvider>
+    </PostHogProvider>
   );
 }
 
@@ -128,4 +149,75 @@ function AuthRedirects() {
   }, [hasHydrated, isLoaded, isSignedIn, pathname, selectedLanguageId]);
 
   return null;
+}
+
+function PostHogScreenTracker() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const pathname = usePathname();
+  const params = useGlobalSearchParams();
+  const posthog = usePostHog();
+  const lastTrackedScreen = useRef<string | null>(null);
+  const hasHydrated = useLanguageStore((state) => state.hasHydrated);
+  const selectedLanguageId = useLanguageStore(
+    (state) => state.selectedLanguageId,
+  );
+
+  useEffect(() => {
+    if (
+      !isLoaded ||
+      !hasHydrated ||
+      !shouldTrackScreen(pathname, isSignedIn === true, selectedLanguageId)
+    ) {
+      return;
+    }
+
+    const screenProperties = Object.fromEntries(
+      Object.entries(params).sort(([leftKey], [rightKey]) =>
+        leftKey.localeCompare(rightKey),
+      ),
+    );
+    const screenKey = `${pathname}:${JSON.stringify(screenProperties)}`;
+
+    if (lastTrackedScreen.current === screenKey) {
+      return;
+    }
+
+    lastTrackedScreen.current = screenKey;
+    void posthog.screen(pathname, screenProperties);
+  }, [
+    hasHydrated,
+    isLoaded,
+    isSignedIn,
+    params,
+    pathname,
+    posthog,
+    selectedLanguageId,
+  ]);
+
+  return null;
+}
+
+function shouldTrackScreen(
+  pathname: string,
+  isSignedIn: boolean,
+  selectedLanguageId: string | null,
+) {
+  const isAuthRoute = pathname === "/sign-in" || pathname === "/sign-up";
+  const isOnboardingRoute = pathname === "/onboarding";
+  const isOAuthCallbackRoute = pathname === "/oauth-callback";
+  const isLanguageSelectionRoute = pathname === "/language-selection";
+
+  if (!isSignedIn) {
+    return isAuthRoute || isOnboardingRoute || isOAuthCallbackRoute;
+  }
+
+  if (isAuthRoute || isOnboardingRoute) {
+    return false;
+  }
+
+  if (!selectedLanguageId) {
+    return isLanguageSelectionRoute || isOAuthCallbackRoute;
+  }
+
+  return true;
 }
