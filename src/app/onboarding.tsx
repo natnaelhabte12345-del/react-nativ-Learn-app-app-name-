@@ -4,16 +4,20 @@ import { Image, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { images } from "@/constants/images";
+import { useLanguageStore } from "@/store/language-store";
 
 export default function OnboardingScreen() {
   const { isLoaded, isSignedIn } = useAuth();
+
+  const selectedLanguageId = useLanguageStore((state) => state.selectedLanguageId);
 
   if (!isLoaded) {
     return null;
   }
 
   if (isSignedIn) {
-    return <Redirect href="/language-selection" />;
+    const hasSelectedLanguage = selectedLanguageId !== null;
+    return <Redirect href={hasSelectedLanguage ? "/" : "/language-selection"} />;
   }
 
   return (

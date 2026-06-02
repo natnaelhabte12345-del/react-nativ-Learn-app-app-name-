@@ -158,7 +158,7 @@ Auth: `Authorization: Bearer $CLERK_SECRET_KEY` on every request.
 **List users**
 ```
 GET /v1/users
-Query params: limit (max 500, default 10), offset, order_by (+/-created_at, +/-updated_at, +/-email_address, +/-web3wallet, +/-first_name, +/-last_name, +/-phone_number, +/-username, +/-last_active_at, +/-last_sign_in_at), email_address[], phone_number[], username[], web3wallet[], user_id[], query, created_at (ISO 8601 range: gt:TIMESTAMP or lt:TIMESTAMP in Unix ms)
+Query params: limit (max 500, default 10), offset, order_by (+/-created_at, +/-updated_at, +/-email_address, +/-web3wallet, +/-first_name, +/-last_name, +/-phone_number, +/-username, +/-last_active_at, +/-last_sign_in_at), email_address[], phone_number[], username[], web3wallet[], user_id[], query, created_at (Unix epoch milliseconds range: gt:TIMESTAMP or lt:TIMESTAMP — use gt:<ms> for "after" filters)
 Returns: array of User objects
 ```
 

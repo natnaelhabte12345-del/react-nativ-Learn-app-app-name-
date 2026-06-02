@@ -27,4 +27,9 @@ echo "AVAILABLE VERSIONS: $(echo "$versions" | tr '\n' ' ')"
 echo "LATEST VERSION: $latest"
 echo ""
 echo "TAGS:"
-curl -s "${RAW_BASE}/${latest}" | node "$(dirname "$0")/extract-tags.js"
+if [ -z "$latest" ]; then
+  echo "No spec versions found at $API_URL" >&2
+  exit 1
+fi
+
+curl -fs "${RAW_BASE}/${latest}" | node "$(dirname "$0")/extract-tags.js"

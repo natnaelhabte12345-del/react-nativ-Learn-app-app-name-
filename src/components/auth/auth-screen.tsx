@@ -1,23 +1,23 @@
 import { useAuth, useSignIn, useSignUp, useSSO } from "@clerk/expo";
 import * as Linking from "expo-linking";
 import { router, type Href } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { usePostHog } from "posthog-react-native";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import {
-  Alert,
-  Image,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Image,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import * as WebBrowser from "expo-web-browser";
 
 import { images } from "@/constants/images";
 
@@ -194,6 +194,13 @@ export function AuthScreen({ mode }: AuthScreenProps) {
         }
 
         showVerification();
+        return;
+      }
+
+      // Ensure a sign-in attempt exists before sending a code
+      const { error: createError } = await signIn.create({ identifier: email.trim() } as any);
+      if (createError) {
+        handleAuthError(createError);
         return;
       }
 
@@ -582,12 +589,21 @@ function VerificationModal({
 
 function getErrorMessage(error: unknown) {
   if (error && typeof error === "object") {
-    if ("longMessage" in error && typeof error.longMessage === "string") {
-      return error.longMessage;
+    // Prefer nested Clerk Core v3 validation errors when present
+    const nested = (error as any).errors?.[0];
+    if (nested?.longMessage && typeof nested.longMessage === "string") {
+      return nested.longMessage;
+    }
+    if (nested?.message && typeof nested.message === "string") {
+      return nested.message;
     }
 
-    if ("message" in error && typeof error.message === "string") {
-      return error.message;
+    if ("longMessage" in error && typeof (error as any).longMessage === "string") {
+      return (error as any).longMessage;
+    }
+
+    if ("message" in error && typeof (error as any).message === "string") {
+      return (error as any).message;
     }
   }
 

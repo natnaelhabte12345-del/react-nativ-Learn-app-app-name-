@@ -25,8 +25,6 @@ export const images = {
   tabLearn: require("@/assets/images/tabIcons/ref-tab-learn.png"),
   tabProfileActive: require("@/assets/images/tabIcons/ref-tab-profile-active.png"),
   tabProfile: require("@/assets/images/tabIcons/ref-tab-profile.png"),
-  teacherPortrait: {
-    uri: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=240&h=240&fit=crop&crop=faces",
-  },
+  teacherPortrait: require("@/assets/images/mascot-welcome.png"),
   treasure: require("@/assets/images/treasure.png"),
 };

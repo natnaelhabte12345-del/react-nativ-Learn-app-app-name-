@@ -1,7 +1,6 @@
-import { Show, useUser } from '@clerk/expo'
-import { useClerk } from '@clerk/expo'
+import { Show, useClerk, useUser } from '@clerk/expo'
 import { Link } from 'expo-router'
-import { Text, View, Pressable, StyleSheet } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
 
 export default function Page() {
   const { user } = useUser()
@@ -15,7 +14,7 @@ export default function Page() {
         <Link href="/(auth)/sign-up"><Text>Sign up</Text></Link>
       </Show>
       <Show when="signed-in">
-        <Text>Hello {user?.id}</Text>
+        <Text>Hello {user?.firstName ?? user?.username}</Text>
         <Pressable style={styles.button} onPress={() => signOut()}>
           <Text style={styles.buttonText}>Sign out</Text>
         </Pressable>
