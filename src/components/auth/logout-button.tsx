@@ -1,5 +1,6 @@
-import { useClerk } from "@clerk/expo";
+import { useAuth, useClerk } from "@clerk/expo";
 import { router } from "expo-router";
+import { usePostHog } from "posthog-react-native";
 import { Alert, Text, TouchableOpacity } from "react-native";
 
 type LogoutButtonProps = {
@@ -11,17 +12,33 @@ export function LogoutButton({
   label = "Log out",
   variant = "pill",
 }: LogoutButtonProps) {
+  const posthog = usePostHog();
+  const { userId } = useAuth();
   const { signOut } = useClerk();
   const isTextVariant = variant === "text";
 
   const handleLogout = async () => {
     try {
       await signOut();
-      router.replace("/onboarding");
     } catch (error) {
       console.error("Failed to sign out", error);
       Alert.alert("Could not log out", "Please try again in a moment.");
+      return;
     }
+
+    try {
+      if (userId) {
+        posthog.identify(userId);
+      }
+
+      posthog.capture("sign_out_completed");
+      await posthog.flush();
+      posthog.reset();
+    } catch (error) {
+      console.error("Failed to track sign out", error);
+    }
+
+    router.replace("/onboarding");
   };
 
   return (
@@ -33,6 +50,7 @@ export function LogoutButton({
           : "h-[30px] items-center justify-center rounded-full border border-[#eceef5] bg-white px-3"
       }
       onPress={handleLogout}
+      testID="logout-button"
     >
       <Text
         className={

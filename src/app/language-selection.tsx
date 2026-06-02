@@ -1,5 +1,6 @@
 import { useAuth } from "@clerk/expo";
 import { Redirect, router, type Href } from "expo-router";
+import { usePostHog } from "posthog-react-native";
 import { useMemo, useState } from "react";
 import {
   Image,
@@ -22,6 +23,7 @@ import type { LanguageId, LearningLanguage } from "@/types/learning";
 const homeHref = "/" as Href;
 
 export default function LanguageSelectionScreen() {
+  const posthog = usePostHog();
   const { isLoaded, isSignedIn } = useAuth();
   const hasHydrated = useLanguageStore((state) => state.hasHydrated);
   const persistedLanguageId = useLanguageStore(
@@ -49,6 +51,9 @@ export default function LanguageSelectionScreen() {
   }, [searchQuery]);
 
   const handleSelectLanguage = (languageId: LanguageId) => {
+    posthog.capture("language_selected", {
+      language_code: languageId,
+    });
     setSelectedLanguageId(languageId);
     setSelectedLanguage(languageId);
     router.replace(homeHref);
@@ -167,6 +172,7 @@ function LanguageRow({
         isSelected && styles.selectedLanguageRow,
         showDivider && styles.languageRowSpacing,
       ]}
+      testID={`language-option-${language.id}`}
     >
       <FlagMark languageId={language.id} />
 

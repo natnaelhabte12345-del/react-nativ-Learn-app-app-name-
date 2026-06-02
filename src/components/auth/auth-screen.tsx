@@ -1,6 +1,7 @@
 import { useAuth, useSignIn, useSignUp, useSSO } from "@clerk/expo";
 import * as Linking from "expo-linking";
 import { router, type Href } from "expo-router";
+import { usePostHog } from "posthog-react-native";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import {
   Alert,
@@ -73,7 +74,8 @@ const socialOptions = [
 
 export function AuthScreen({ mode }: AuthScreenProps) {
   const copy = authCopy[mode];
-  const { isSignedIn } = useAuth();
+  const posthog = usePostHog();
+  const { isSignedIn, userId } = useAuth();
   const { signIn, fetchStatus: signInFetchStatus } = useSignIn();
   const { signUp, fetchStatus: signUpFetchStatus } = useSignUp();
   const { startSSOFlow } = useSSO();
@@ -115,6 +117,16 @@ export function AuthScreen({ mode }: AuthScreenProps) {
     router.replace(href as Href);
   };
 
+  const trackSignInCompleted = (method: string, clerkUserId?: string) => {
+    if (clerkUserId) {
+      posthog.identify(clerkUserId);
+    }
+
+    posthog.capture("sign_in_completed", {
+      method,
+    });
+  };
+
   const finalizeSignIn = async () => {
     const { error } = await signIn.finalize({
       navigate: ({ session, decorateUrl }) => {
@@ -126,6 +138,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
           return;
         }
 
+        trackSignInCompleted("code", session.user?.id);
         navigateHome(decorateUrl("/language-selection"));
       },
     });
@@ -265,6 +278,9 @@ export function AuthScreen({ mode }: AuthScreenProps) {
 
       if (createdSessionId && setActive) {
         await setActive({ session: createdSessionId });
+        if (mode === "sign-in") {
+          trackSignInCompleted(strategy);
+        }
         router.replace("/language-selection");
         return;
       }
@@ -292,6 +308,12 @@ export function AuthScreen({ mode }: AuthScreenProps) {
       router.replace("/language-selection");
     }
   }, [isSignedIn]);
+
+  useEffect(() => {
+    if (isSignedIn && userId) {
+      posthog.identify(userId);
+    }
+  }, [isSignedIn, posthog, userId]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -386,6 +408,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
             className="mt-1 items-center justify-center rounded-[16px] bg-lingua-deep-purple py-[15px]"
             disabled={isSubmitting}
             onPress={handleEmailAuth}
+            testID={mode === "sign-in" ? "sign-in-button" : "sign-up-button"}
           >
             <Text className="text-[22px] leading-[28px] font-poppins-semibold text-white">
               {copy.primaryAction}
@@ -409,6 +432,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
               key={option.label}
               disabled={isSubmitting}
               onPress={() => handleSocialAuth(option.strategy)}
+              testID={`${mode}-${option.provider}-button`}
             >
               <View style={styles.socialIconSlot}>
                 <SocialIcon provider={option.provider} />
