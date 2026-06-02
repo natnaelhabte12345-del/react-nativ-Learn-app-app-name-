@@ -1,9 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import {
-  createJSONStorage,
-  persist,
-  type StateStorage,
+    createJSONStorage,
+    persist,
+    type StateStorage,
 } from "zustand/middleware";
 
 import type { LanguageId } from "@/types/learning";
@@ -34,11 +34,12 @@ export const useLanguageStore = create<LanguageState>()(
     }),
     {
       name: "fluentflow-language-state",
-      onRehydrateStorage: (state) => (_, error) => {
+      onRehydrateStorage: (state) => (rehydratedState, error) => {
         if (error) {
           console.warn("Failed to hydrate language state", error);
         }
 
+        // Mark the store as hydrated once rehydration completes (regardless of whether data was present)
         state.setHasHydrated(true);
       },
       partialize: (state) => ({

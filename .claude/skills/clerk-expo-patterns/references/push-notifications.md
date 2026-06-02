@@ -1,6 +1,6 @@
 # Push Notifications with User Context
 
-Store the Expo push token against the Clerk user using `publicMetadata` or your own database.
+Store the Expo push token against the Clerk user using `publicMetadata` or your own database. The secure, recommended approach is to persist tokens from your server using the Clerk Backend SDK (write to `publicMetadata` or your DB). The example below shows a quick client-side path using `unsafeMetadata` for convenience only.
 
 ## Register Push Token After Sign-In
 
@@ -21,6 +21,7 @@ export function PushTokenRegistrar() {
 
       const token = (await Notifications.getExpoPushTokenAsync()).data
 
+      // QUICK PATH (client-writable, not recommended for sensitive/verified data):
       await user.update({
         unsafeMetadata: {
           ...user.unsafeMetadata,
@@ -63,6 +64,6 @@ async function sendNotification(userId: string, title: string, body: string) {
 
 ## CRITICAL
 
-- `user.update()` is client-side — it writes `unsafeMetadata` without server auth
-- For verified/sensitive data, use the Clerk Backend SDK from your server to write `publicMetadata`
+- `user.update()` is client-side — it writes `unsafeMetadata` without server auth. This is a quick path only and is appropriate for ephemeral, non-sensitive data.
+- Recommended: persist Expo push tokens from your server using the Clerk Backend SDK and write to `publicMetadata` (server-writable) or store tokens in your own database. Server-side writing ensures tokens are trusted and not client-injectable.
 - Re-register the push token if `user.id` changes (org switch does not change user.id, but sign-out/sign-in as different user does)

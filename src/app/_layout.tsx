@@ -2,11 +2,11 @@ import { ClerkProvider, useAuth } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
 import { useFonts } from "expo-font";
 import {
-  router,
-  Stack,
-  useGlobalSearchParams,
-  usePathname,
-  type Href,
+    router,
+    Stack,
+    useGlobalSearchParams,
+    usePathname,
+    type Href,
 } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { PostHogProvider, usePostHog } from "posthog-react-native";
@@ -45,23 +45,33 @@ export default function RootLayout() {
     return <MissingClerkKeyScreen />;
   }
 
+  if (posthogKey) {
+    return (
+      <PostHogProvider
+        apiKey={posthogKey}
+        options={{ host: posthogHost }}
+        autocapture={{
+          captureScreens: false,
+          captureTouches: true,
+          propsToCapture: ["testID"],
+          maxElementsCaptured: 20,
+        }}
+      >
+        <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+          <AuthRedirects />
+          <PostHogScreenTracker />
+          <Stack screenOptions={{ headerShown: false }} />
+        </ClerkProvider>
+      </PostHogProvider>
+    );
+  }
+
   return (
-    <PostHogProvider
-      apiKey={posthogKey}
-      options={{ host: posthogHost }}
-      autocapture={{
-        captureScreens: false,
-        captureTouches: true,
-        propsToCapture: ["testID"],
-        maxElementsCaptured: 20,
-      }}
-    >
-      <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
-        <AuthRedirects />
-        <PostHogScreenTracker />
-        <Stack screenOptions={{ headerShown: false }} />
-      </ClerkProvider>
-    </PostHogProvider>
+    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+      <AuthRedirects />
+      <PostHogScreenTracker />
+      <Stack screenOptions={{ headerShown: false }} />
+    </ClerkProvider>
   );
 }
 

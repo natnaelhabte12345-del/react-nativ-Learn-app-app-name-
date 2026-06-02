@@ -62,6 +62,7 @@
       "prompt": "i'm updating user metadata to add a 'plan' field but it keeps deleting the existing 'role' field. what am i doing wrong?",
       "expected_output": "Metadata updates overwrite not merge. Read existing metadata first, spread it, then write back.",
       "scaffold": "nextjs-basic-auth",
+      "files": ["nextjs-basic-auth"],
       "expectations": [
         "Explains that updateUser publicMetadata replaces all existing metadata, not merges",
         "Shows reading the existing user first with getUser(userId)",
@@ -75,6 +76,7 @@
       "prompt": "my clerk backend api calls are failing with 429 errors in development. what are the rate limits?",
       "expected_output": "Development has 100 req/10s limit (vs 1000/10s in production). Batch operations or reduce call frequency.",
       "scaffold": "nextjs-basic-auth",
+      "files": [],
       "expectations": [
         "States the development rate limit (100 requests per 10 seconds)",
         "States the production rate limit (1000 requests per 10 seconds)",

@@ -1,25 +1,26 @@
 import { useAuth, useSignIn, useSignUp, useSSO } from "@clerk/expo";
 import * as Linking from "expo-linking";
 import { router, type Href } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { usePostHog } from "posthog-react-native";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import {
-  Alert,
-  Image,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Image,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import * as WebBrowser from "expo-web-browser";
 
 import { images } from "@/constants/images";
+import { useLanguageStore } from "@/store/language-store";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -95,6 +96,9 @@ export function AuthScreen({ mode }: AuthScreenProps) {
     setModalVisible(true);
   };
 
+  const selectedLanguageId = useLanguageStore((s) => s.selectedLanguageId);
+  const hasHydrated = useLanguageStore((s) => s.hasHydrated);
+
   const handleCodeChange = (value: string) => {
     const nextCode = value.replace(/\D/g, "").slice(0, CODE_LENGTH);
     setCode(nextCode);
@@ -139,7 +143,8 @@ export function AuthScreen({ mode }: AuthScreenProps) {
         }
 
         trackSignInCompleted("code", session.user?.id);
-        navigateHome(decorateUrl("/language-selection"));
+        const target = hasHydrated && selectedLanguageId !== null ? "/" : "/language-selection";
+        navigateHome(decorateUrl(target));
       },
     });
 
@@ -159,7 +164,8 @@ export function AuthScreen({ mode }: AuthScreenProps) {
           return;
         }
 
-        navigateHome(decorateUrl("/language-selection"));
+        const target = hasHydrated && selectedLanguageId !== null ? "/" : "/language-selection";
+        navigateHome(decorateUrl(target));
       },
     });
 
@@ -194,6 +200,13 @@ export function AuthScreen({ mode }: AuthScreenProps) {
         }
 
         showVerification();
+        return;
+      }
+
+      // Ensure a sign-in attempt exists before sending a code
+      const { error: createError } = await signIn.create({ identifier: email.trim() });
+      if (createError) {
+        handleAuthError(createError);
         return;
       }
 
@@ -580,15 +593,33 @@ function VerificationModal({
   );
 }
 
-function getErrorMessage(error: unknown) {
-  if (error && typeof error === "object") {
-    if ("longMessage" in error && typeof error.longMessage === "string") {
-      return error.longMessage;
-    }
+interface ClerkErrorDetail {
+  longMessage?: string;
+  message?: string;
+}
 
-    if ("message" in error && typeof error.message === "string") {
-      return error.message;
-    }
+interface ClerkErrorLike {
+  errors?: ClerkErrorDetail[];
+  longMessage?: string;
+  message?: string;
+}
+
+function isClerkErrorLike(obj: unknown): obj is ClerkErrorLike {
+  if (!obj || typeof obj !== "object") return false;
+  const anyObj = obj as Record<string, unknown>;
+  if (Array.isArray(anyObj.errors)) return true;
+  if (typeof anyObj.longMessage === "string") return true;
+  if (typeof anyObj.message === "string") return true;
+  return false;
+}
+
+function getErrorMessage(error: unknown) {
+  if (isClerkErrorLike(error)) {
+    const nested = error.errors && error.errors.length > 0 ? error.errors[0] : undefined;
+    if (nested?.longMessage) return nested.longMessage;
+    if (nested?.message) return nested.message;
+    if (error.longMessage) return error.longMessage;
+    if (error.message) return error.message;
   }
 
   return "Something went wrong. Please try again.";

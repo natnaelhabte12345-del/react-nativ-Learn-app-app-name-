@@ -28,7 +28,7 @@ export function SignInScreen() {
 
   const handleGoogle = async () => {
     try {
-      const { createdSessionId, setActive, signIn, signUp } = await startSSOFlow({
+      const { createdSessionId, setActive, signUp } = await startSSOFlow({
         strategy: 'oauth_google',
         redirectUrl: 'myapp://oauth-callback',
       })
