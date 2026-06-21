@@ -10,21 +10,17 @@ export type LanguageId =
   | "german"
   | "chinese";
 
-export type UnitId =
-  | "spanish-basics-1"
-  | "spanish-food-1"
-  | "french-basics-1"
-  | "french-cafe-1"
-  | "japanese-basics-1"
-  | "korean-basics-1";
+export type UnitId = string;
 
-export type LessonId =
-  | "spanish-greetings"
-  | "spanish-cafe-order"
-  | "french-greetings"
-  | "french-cafe-order"
-  | "japanese-greetings"
-  | "korean-greetings";
+export type LessonId = string;
+
+export type LessonImageKey =
+  | "lessonGreetings"
+  | "lessonDailyLife"
+  | "lessonCafe"
+  | "lessonTravel"
+  | "lessonShopping"
+  | "lessonFamily";
 
 export type ActivityType =
   | "vocabulary"
@@ -109,6 +105,7 @@ export type Lesson = {
   languageId: LanguageId;
   title: string;
   description: string;
+  imageKey: LessonImageKey;
   xpReward: number;
   estimatedMinutes: number;
   goals: LessonGoal[];

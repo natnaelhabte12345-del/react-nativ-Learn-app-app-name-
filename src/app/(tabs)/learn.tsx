@@ -1,5 +1,5 @@
-import { TabPlaceholderScreen } from "@/components/navigation/tab-placeholder-screen";
+import { LessonScreen } from "@/components/lessons/lesson-screen";
 
 export default function LearnTabScreen() {
-  return <TabPlaceholderScreen title="Learn" />;
+  return <LessonScreen />;
 }

@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { LogoutButton } from "@/components/auth/logout-button";
+import { AppLoadingScreen } from "@/components/ui/app-loading-screen";
 import { images } from "@/constants/images";
 import { defaultLanguageId, languages } from "@/data/languages";
 import { useLanguageStore } from "@/store/language-store";
@@ -60,7 +61,7 @@ export default function LanguageSelectionScreen() {
   };
 
   if (!isLoaded || !hasHydrated) {
-    return null;
+    return <AppLoadingScreen message="Loading languages..." />;
   }
 
   if (!isSignedIn) {
