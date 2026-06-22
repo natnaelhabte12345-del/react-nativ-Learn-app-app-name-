@@ -20,6 +20,7 @@ import { defaultLanguageId } from "@/data/languages";
 import { lessonsById, lessonsByLanguageId } from "@/data/lessons";
 import { unitsByLanguageId } from "@/data/units";
 import { useLanguageStore } from "@/store/language-store";
+import { useProgressStore } from "@/store/progress-store";
 import type { LanguageId, LearningUnit, Lesson } from "@/types/learning";
 
 const CONTENT_MAX_WIDTH = 500;
@@ -28,8 +29,6 @@ const CONTENT_PADDING = 18;
 const SCENE_ASPECT_RATIO = 546 / 272;
 // How far the floating tab card overlaps the bottom edge of the illustration.
 const SEGMENT_OVERLAP = 26;
-const ACTIVE_LESSON_INDEX = 2;
-
 type LessonStatus = "completed" | "inProgress" | "notStarted";
 type LessonTab = "lessons" | "practice";
 
@@ -38,6 +37,7 @@ export function LessonScreen() {
   const hasHydrated = useLanguageStore((state) => state.hasHydrated);
   const selectedLanguageId =
     useLanguageStore((state) => state.selectedLanguageId) ?? defaultLanguageId;
+  const completedLessonIds = useProgressStore((state) => state.completedLessonIds);
   const [activeTab, setActiveTab] = useState<LessonTab>("lessons");
 
   const lessonPath = useMemo(
@@ -59,7 +59,11 @@ export function LessonScreen() {
 
   const unit = lessonPath.unit;
   const totalLessons = lessonPath.lessons.length;
-  const currentLesson = Math.min(ACTIVE_LESSON_INDEX + 1, totalLessons);
+  const activeLessonIndex = lessonPath.lessons.findIndex(
+    (lesson) => !completedLessonIds.includes(lesson.id),
+  );
+  const currentLesson =
+    activeLessonIndex === -1 ? totalLessons : activeLessonIndex + 1;
   const heroTitle = unit?.title ?? "At the Café";
   const heroSubtitle = `Unit ${(unit?.order ?? 2) + 1} • ${currentLesson} / ${totalLessons} lessons`;
 
@@ -93,7 +97,7 @@ export function LessonScreen() {
                   index={index}
                   key={lesson.id}
                   lesson={lesson}
-                  status={getMockLessonStatus(index)}
+                  status={getLessonStatus(lesson.id, index, activeLessonIndex, completedLessonIds)}
                 />
               ))}
             </View>
@@ -355,15 +359,14 @@ function LessonStatusMark({ lesson, status }: LessonStatusMarkProps) {
   return null;
 }
 
-function getMockLessonStatus(index: number): LessonStatus {
-  if (index < ACTIVE_LESSON_INDEX) {
-    return "completed";
-  }
-
-  if (index === ACTIVE_LESSON_INDEX) {
-    return "inProgress";
-  }
-
+function getLessonStatus(
+  lessonId: string,
+  index: number,
+  activeLessonIndex: number,
+  completedLessonIds: string[],
+): LessonStatus {
+  if (completedLessonIds.includes(lessonId)) return "completed";
+  if (activeLessonIndex !== -1 && index === activeLessonIndex) return "inProgress";
   return "notStarted";
 }
 

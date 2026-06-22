@@ -74,6 +74,7 @@ export default function AudioLessonScreen() {
   const agentSessionRef = useRef<StreamAudioAgentSession | null>(null);
   const isStartingRef = useRef(false);
   const hasStartedRef = useRef(false);
+  const mountedRef = useRef(true);
 
   // ── Cleanup ────────────────────────────────────────────────────────────────
   const cleanup = useCallback(
@@ -114,6 +115,7 @@ export default function AudioLessonScreen() {
 
   useEffect(() => {
     return () => {
+      mountedRef.current = false;
       void cleanup({ resetState: false });
     };
   }, [cleanup]);
@@ -137,6 +139,7 @@ export default function AudioLessonScreen() {
         languageId: lesson.languageId,
         lessonId: lesson.id,
       });
+      if (!mountedRef.current) return;
       callSessionRef.current = session;
 
       // Step 2 — Join the call via Stream SDK (requires native WebRTC modules).
@@ -144,6 +147,7 @@ export default function AudioLessonScreen() {
       // below still runs and the agent session will appear in the server logs.
       setCallPhase("joining");
       await tryJoinCall(session, callRef, clientRef, setIsMicEnabled);
+      if (!mountedRef.current) return;
       setCallPhase("active");
 
       // Step 3 — Start Vision Agent (pure HTTP, works in Expo Go).
@@ -155,6 +159,16 @@ export default function AudioLessonScreen() {
         callType: session.callType,
         clerkToken: token,
       });
+      if (!mountedRef.current) {
+        // Component unmounted while agent was starting — stop it immediately
+        // so it doesn't remain alive with no cleanup path.
+        await stopStreamAudioAgent({
+          callId: session.callId,
+          clerkToken: token,
+          sessionId: agent.sessionId,
+        }).catch(() => undefined);
+        return;
+      }
       agentSessionRef.current = agent;
       setAgentStatus("connected");
     } catch (error) {

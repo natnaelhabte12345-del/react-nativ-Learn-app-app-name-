@@ -2,6 +2,21 @@ type PostJsonOptions = {
   token?: string;
 };
 
+const REQUEST_TIMEOUT_MS = 30_000;
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -18,7 +33,7 @@ export async function postJson<TResponse>(
   options: PostJsonOptions = {},
 ): Promise<TResponse> {
   const url = getApiUrl(path);
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     body: JSON.stringify(body),
     headers: {
       "Content-Type": "application/json",
@@ -26,6 +41,9 @@ export async function postJson<TResponse>(
     },
     method: "POST",
   }).catch((error: unknown) => {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new ApiError(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`, 0);
+    }
     console.error("API network request failed", error);
     throw new ApiError(
       `Network request failed while calling ${url}. Restart Expo and make sure the native app is connected to the same dev server.`,
@@ -56,7 +74,7 @@ export async function deleteJson<TResponse>(
   options: PostJsonOptions = {},
 ): Promise<TResponse> {
   const url = getApiUrl(path);
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     body: JSON.stringify(body),
     headers: {
       "Content-Type": "application/json",
@@ -64,6 +82,9 @@ export async function deleteJson<TResponse>(
     },
     method: "DELETE",
   }).catch((error: unknown) => {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new ApiError(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`, 0);
+    }
     console.error("API network request failed", error);
     throw new ApiError(
       `Network request failed while calling ${url}. Restart Expo and make sure the native app is connected to the same dev server.`,

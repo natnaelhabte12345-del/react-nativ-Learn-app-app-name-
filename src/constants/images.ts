@@ -16,9 +16,7 @@ export const images = {
   languageWorld: require("@/assets/images/language-world-full.png"),
   lessonCafeHero: require("@/assets/images/lesson-cafe-hero-reference.png"),
   lessonCafeScene: require("@/assets/images/lesson-cafe-scene.png"),
-  lessonPlaceholder: {
-    uri: "https://picsum.photos/seed/fluentflow-lesson/320/240",
-  },
+  lessonPlaceholder: require("@/assets/images/mascot-welcome.png"),
   mascotAuth: require("@/assets/images/mascot-auth.png"),
   mascotLogo: require("@/assets/images/moscot-logo.png"),
   mascotWelcome: require("@/assets/images/mascot-welcome.png"),
@@ -39,8 +37,8 @@ export const images = {
   treasure: require("@/assets/images/treasure.png"),
 };
 
-// Each lesson uses its own bundled illustration so the thumbnails stay on-brand
-// (no stock photos). The Picsum `lessonPlaceholder` only covers unknown keys.
+// Each lesson uses its own bundled illustration. lessonPlaceholder only fires
+// for unknown imageKey values and uses a bundled asset so it works offline.
 export const lessonImageSources = {
   lessonCafe: images.palace,
   lessonDailyLife: images.languageWorld,
