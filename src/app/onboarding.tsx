@@ -3,6 +3,7 @@ import { Link, Redirect } from "expo-router";
 import { Image, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AppLoadingScreen } from "@/components/ui/app-loading-screen";
 import { images } from "@/constants/images";
 import { useLanguageStore } from "@/store/language-store";
 
@@ -13,7 +14,7 @@ export default function OnboardingScreen() {
   const hasHydrated = useLanguageStore((state) => state.hasHydrated);
 
   if (!isLoaded) {
-    return null;
+    return <AppLoadingScreen message="Loading sign in..." />;
   }
 
   if (isSignedIn && hasHydrated) {

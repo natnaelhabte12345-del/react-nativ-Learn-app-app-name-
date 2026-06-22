@@ -8,15 +8,13 @@ import {
     usePathname,
     type Href,
 } from "expo-router";
-import * as SplashScreen from "expo-splash-screen";
 import { PostHogProvider, usePostHog } from "posthog-react-native";
 import { useEffect, useRef } from "react";
 import { Text, View } from "react-native";
 import "../../global.css";
 
+import { AppLoadingScreen } from "@/components/ui/app-loading-screen";
 import { useLanguageStore } from "@/store/language-store";
-
-SplashScreen.preventAutoHideAsync();
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
 const posthogKey = process.env.EXPO_PUBLIC_POSTHOG_KEY ?? "";
@@ -31,14 +29,8 @@ export default function RootLayout() {
     "Poppins-SemiBold": require("../../assets/fonts/Poppins-SemiBold.ttf"),
   });
 
-  useEffect(() => {
-    if (loaded || error) {
-      SplashScreen.hideAsync();
-    }
-  }, [error, loaded]);
-
   if (!loaded && !error) {
-    return null;
+    return <AppLoadingScreen message="Loading app..." />;
   }
 
   if (!publishableKey) {

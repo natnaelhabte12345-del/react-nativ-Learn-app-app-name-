@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AppLoadingScreen } from "@/components/ui/app-loading-screen";
 import { images } from "@/constants/images";
 import { defaultLanguageId, languages } from "@/data/languages";
 import { lessons } from "@/data/lessons";
@@ -49,7 +50,7 @@ export function HomeScreen() {
     useLanguageStore((state) => state.selectedLanguageId) ?? defaultLanguageId;
 
   if (!isLoaded || !hasHydrated) {
-    return null;
+    return <AppLoadingScreen message="Loading your dashboard..." />;
   }
 
   const selectedLanguage =

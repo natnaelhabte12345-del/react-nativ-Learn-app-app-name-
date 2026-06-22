@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "agent": {
+      "source": "visionagents.ai",
+      "sourceType": "well-known",
+      "computedHash": "84c5fa12c3dc071db6572d5cee1ffb760999c65b329f3bd416de1d48dee8fd3a"
+    },
     "clerk": {
       "source": "clerk/skills",
       "sourceType": "github",

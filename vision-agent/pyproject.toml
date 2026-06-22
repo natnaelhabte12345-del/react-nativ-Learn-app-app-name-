@@ -1,0 +1,12 @@
+[project]
+name = "dualingo-vision-agent"
+version = "0.1.0"
+description = "Voice-only AI language teacher using Vision Agents, OpenAI Realtime, and Stream Edge."
+requires-python = ">=3.12"
+dependencies = [
+    "python-dotenv>=1.0.1",
+    "vision-agents[getstream,openai,gemini]>=0.1.0",
+]
+
+[tool.uv]
+package = false
