@@ -231,8 +231,20 @@ export default function AudioLessonScreen() {
         await waitForAgentParticipant(call, AGENT_JOIN_TIMEOUT_MS);
         await delay(AGENT_OPENING_HEAD_START_MS);
         if (!mountedRef.current) return;
-        await call.microphone.enable().catch(() => undefined);
-        if (mountedRef.current) setIsMicEnabled(true);
+        // Only flip to the "Listening" state when the mic is truly usable.
+        // Swallowing the enable failure here would leave the UI claiming it's
+        // listening while no audio reaches the agent.
+        try {
+          await call.microphone.enable();
+          if (mountedRef.current) setIsMicEnabled(true);
+        } catch {
+          if (mountedRef.current) {
+            setIsMicEnabled(false);
+            setPermissionMessage(
+              "Couldn't turn on your microphone. Check microphone permissions and retry.",
+            );
+          }
+        }
       }
 
       setAgentStatus("connected");
@@ -265,22 +277,30 @@ export default function AudioLessonScreen() {
   // Pressing this button forces an immediate interrupt: briefly cycles the mic
   // off/on so the agent's turn detection resets and it stops mid-sentence.
   const handleInterrupt = useCallback(async () => {
-    if (callPhase !== "active") return;
+    // Only cycle the mic once it has been intentionally enabled — interrupting
+    // while the agent is still connecting would turn the mic on prematurely.
+    if (callPhase !== "active" || !isMicEnabled) return;
     const call = callRef.current;
     if (!call) return;
     setIsMicEnabled(false);
     await call.microphone.disable().catch(() => undefined);
     await new Promise((r) => setTimeout(r, 100));
-    await call.microphone.enable().catch(() => undefined);
-    if (mountedRef.current) setIsMicEnabled(true);
-  }, [callPhase]);
+    // Re-enable can fail (permission revoked, device busy) — keep the mic shown
+    // as off unless it actually came back on.
+    try {
+      await call.microphone.enable();
+      if (mountedRef.current) setIsMicEnabled(true);
+    } catch {
+      if (mountedRef.current) setIsMicEnabled(false);
+    }
+  }, [callPhase, isMicEnabled]);
 
   const isConnecting =
     callPhase === "creating" ||
     callPhase === "joining" ||
     callPhase === "ending" ||
     (callPhase === "active" && agentStatus === "connecting");
-  const micDisabled = callPhase !== "active";
+  const micDisabled = callPhase !== "active" || !isMicEnabled;
   const practiceItem =
     practiceItemIndex === null ? null : lesson?.vocabulary[practiceItemIndex];
 

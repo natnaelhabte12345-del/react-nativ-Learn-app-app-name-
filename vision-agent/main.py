@@ -236,9 +236,11 @@ Teaching prompt:
 Correction style:
 {correction_style}
 
-STRICT RULE: Never say, teach, or mention any word that is not listed above.
-No synonyms. No bonus vocabulary. No words from other languages.
-No words from other lessons. If you are unsure whether a word belongs here, skip it.
+STRICT RULE: The {target_language} you TEACH must come only from the words and phrases listed above —
+in that language, no synonyms, no bonus vocabulary, no words from other lessons or other languages.
+If you are unsure whether a {target_language} word belongs here, skip it.
+You may still speak English freely for scaffolding: greetings, giving meanings, corrections,
+encouragement, and turn-taking ("Can you try that?", "Your turn!").
 If the learner asks about something off-topic, smile and redirect them to the next word on the list.
 """.strip()
 
@@ -246,6 +248,7 @@ If the learner asks about something off-topic, smile and redirect them to the ne
 def _opening_prompt(custom: dict[str, Any]) -> str:
     lesson = _as_dict(custom.get("lesson"))
     language = _as_dict(custom.get("language"))
+    prompt = _as_dict(custom.get("aiTeacherPrompt") or lesson.get("aiTeacherPrompt"))
     target_language = (
         language.get("name")
         if isinstance(language.get("name"), str)
@@ -256,6 +259,18 @@ def _opening_prompt(custom: dict[str, Any]) -> str:
         if isinstance(lesson.get("title"), str)
         else f"{target_language} lesson"
     )
+
+    # Prefer the lesson-specific opening line authored in src/data/lessons.ts
+    # so the first turn matches the scenario the learner picked.
+    opening_line = prompt.get("openingLine")
+    if isinstance(opening_line, str) and opening_line.strip():
+        return (
+            "Begin speaking immediately and do not wait for learner input. "
+            f"You are starting the lesson '{lesson_title}'. Follow this opening "
+            f"exactly: {opening_line.strip()} Give one short greeting plus that "
+            "first step, then stop and let the learner respond."
+        )
+
     vocabulary = lesson.get("vocabulary")
     first_item = (
         _as_dict(vocabulary[0])

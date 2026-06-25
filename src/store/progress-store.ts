@@ -12,15 +12,27 @@ const serverStorage: StateStorage = {
   setItem: () => undefined,
 };
 
+// Build a YYYY-MM-DD key from local date parts so day boundaries follow the
+// learner's local midnight (not UTC) and stay correct across DST transitions.
+function toLocalDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function todayISO(): string {
-  return new Date().toISOString().split("T")[0];
+  return toLocalDateKey(new Date());
 }
 
 function yesterdayISO(): string {
-  return new Date(Date.now() - 86_400_000).toISOString().split("T")[0];
+  const date = new Date();
+  date.setDate(date.getDate() - 1);
+  return toLocalDateKey(date);
 }
 
 type ProgressState = {
+  hasHydrated: boolean;
   completedLessonIds: string[];
   streak: number;
   dailyXp: number;
@@ -29,15 +41,18 @@ type ProgressState = {
   completeLesson: (lessonId: string, xpReward?: number) => void;
   recordActivity: () => void;
   resetProgress: () => void;
+  setHasHydrated: (hasHydrated: boolean) => void;
 };
 
 export const useProgressStore = create<ProgressState>()(
   persist(
     (set) => ({
+      hasHydrated: false,
       completedLessonIds: [],
       streak: 0,
       dailyXp: 0,
       lastActiveDate: null,
+      setHasHydrated: (hasHydrated) => set({ hasHydrated }),
 
       completeLesson: (lessonId, xpReward = 10) =>
         set((state) => {
@@ -69,6 +84,15 @@ export const useProgressStore = create<ProgressState>()(
     {
       name: "fluentflow-progress-state",
       version: 2,
+      onRehydrateStorage: (state) => (_rehydratedState, error) => {
+        if (error) {
+          console.warn("Failed to hydrate progress state", error);
+        }
+
+        // Mark hydrated once rehydration completes so consumers don't read or
+        // write streak/XP against stale defaults.
+        state.setHasHydrated(true);
+      },
       migrate: (persistedState) => {
         const state = persistedState as Partial<ProgressState>;
 

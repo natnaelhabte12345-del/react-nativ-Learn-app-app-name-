@@ -50,14 +50,18 @@ export function HomeScreen() {
   const hasHydrated = useLanguageStore((state) => state.hasHydrated);
   const selectedLanguageId =
     useLanguageStore((state) => state.selectedLanguageId) ?? defaultLanguageId;
+  const progressHydrated = useProgressStore((state) => state.hasHydrated);
   const streak = useProgressStore((state) => state.streak);
   const dailyXp = useProgressStore((state) => state.dailyXp);
   const recordActivity = useProgressStore((state) => state.recordActivity);
 
-  // Record that the user opened the app today — updates streak if it's a new day
+  // Record that the user opened the app today — updates streak if it's a new day.
+  // Gated on progress-store hydration so we don't overwrite the persisted streak
+  // with default values before AsyncStorage has rehydrated.
   useEffect(() => {
+    if (!progressHydrated) return;
     recordActivity();
-  }, [recordActivity]);
+  }, [progressHydrated, recordActivity]);
 
   if (!isLoaded || !hasHydrated) {
     return <AppLoadingScreen message="Loading your dashboard..." />;
