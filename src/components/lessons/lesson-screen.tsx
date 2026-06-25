@@ -297,6 +297,12 @@ function LessonCard({ index, lesson, status }: LessonCardProps) {
         >
           {lesson.title}
         </Text>
+        <Text
+          className="mt-[3px] text-[12px] leading-[17px] font-poppins-regular text-[#727B96]"
+          numberOfLines={1}
+        >
+          {lesson.vocabulary.map((item) => item.term).join(" · ")}
+        </Text>
         <LessonStatusText status={status} />
       </View>
 

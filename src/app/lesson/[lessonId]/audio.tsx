@@ -11,14 +11,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
-  type ImageSourcePropType,
   PermissionsAndroid,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -45,8 +42,9 @@ type StreamVideoClientCtor = new (opts: {
   user: { id: string; image?: string; name: string };
 }) => StreamVideoClient;
 
-const BAR_MAX_WIDTH = 470;
-const BAR_HORIZONTAL_MARGIN = 12;
+const AI_TEACHER_USER_ID = "duo-ai-teacher";
+const AGENT_OPENING_HEAD_START_MS = 900;
+const AGENT_JOIN_TIMEOUT_MS = 10_000;
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -63,15 +61,17 @@ export default function AudioLessonScreen() {
   const [agentStatus, setAgentStatus] = useState<AgentStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isMicEnabled, setIsMicEnabled] = useState(false);
-  const [isCameraEnabled, setIsCameraEnabled] = useState(false);
-  const [areSubtitlesEnabled, setAreSubtitlesEnabled] = useState(true);
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
+  const [recognizedSpeech, setRecognizedSpeech] = useState<string | null>(null);
+  const [practiceItemIndex, setPracticeItemIndex] = useState<number | null>(null);
 
   // ── Refs ───────────────────────────────────────────────────────────────────
   const clientRef = useRef<StreamVideoClient | null>(null);
   const callRef = useRef<Call | null>(null);
   const callSessionRef = useRef<StreamAudioCallSession | null>(null);
   const agentSessionRef = useRef<StreamAudioAgentSession | null>(null);
+  const captionUnsubRef = useRef<(() => void) | null>(null);
+  const captionClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isStartingRef = useRef(false);
   const hasStartedRef = useRef(false);
   const mountedRef = useRef(true);
@@ -83,6 +83,11 @@ export default function AudioLessonScreen() {
       const callSess = callSessionRef.current;
       agentSessionRef.current = null;
       callSessionRef.current = null;
+
+      // Tear down caption subscription and clear pending clear-timer
+      captionUnsubRef.current?.();
+      captionUnsubRef.current = null;
+      if (captionClearRef.current) clearTimeout(captionClearRef.current);
 
       if (agentSess && callSess) {
         const token = await getToken().catch(() => null);
@@ -108,17 +113,28 @@ export default function AudioLessonScreen() {
         setAgentStatus("idle");
         setIsMicEnabled(false);
         setErrorMessage(null);
+        setPermissionMessage(null);
+        setRecognizedSpeech(null);
+        setPracticeItemIndex(null);
       }
     },
     [getToken],
   );
 
+  // Latest-cleanup ref so the unmount effect runs exactly once (real unmount)
+  // instead of re-firing whenever getToken/cleanup identity changes. A re-fire
+  // would flip mountedRef to false and abort the in-flight call setup, leaving
+  // the screen stuck on "creating".
+  const cleanupRef = useRef(cleanup);
+  cleanupRef.current = cleanup;
+
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      void cleanup({ resetState: false });
+      void cleanupRef.current({ resetState: false });
     };
-  }, [cleanup]);
+  }, []);
 
   // ── Start lesson ───────────────────────────────────────────────────────────
   const handleStartLesson = useCallback(async () => {
@@ -146,9 +162,45 @@ export default function AudioLessonScreen() {
       // Wrapped in try/catch so Expo Go doesn't crash here — the agent flow
       // below still runs and the agent session will appear in the server logs.
       setCallPhase("joining");
-      await tryJoinCall(session, callRef, clientRef, setIsMicEnabled);
+      await tryJoinCall(session, callRef, clientRef);
       if (!mountedRef.current) return;
       setCallPhase("active");
+
+      // Start closed captions so the chat bubble shows what is actually being said.
+      // Falls back gracefully if the feature isn't enabled on the Stream dashboard.
+      const call = callRef.current;
+      if (call) {
+        // Keep learner audio out of the realtime model until Duo has started.
+        await call.microphone.disable().catch(() => undefined);
+        await call.startClosedCaptions().catch(() => undefined);
+        captionUnsubRef.current = call.on("call.closed_caption", (event: any) => {
+          if (!mountedRef.current) return;
+          const cc = event?.closed_caption ?? event?.closedCaption;
+          if (!cc?.text) return;
+          const isAgent = (cc.speaker_id ?? cc.speakerId ?? "")
+            .toLowerCase()
+            .includes("duo");
+
+          if (isAgent) {
+            const spokenText = String(cc.text).toLocaleLowerCase();
+            const nextPracticeIndex = lesson.vocabulary.findIndex((item) =>
+              spokenText.includes(item.term.toLocaleLowerCase()),
+            );
+            if (nextPracticeIndex >= 0) {
+              setPracticeItemIndex(nextPracticeIndex);
+            }
+            return;
+          }
+
+          setRecognizedSpeech(String(cc.text));
+          // Keep the learner's latest STT result visible briefly, then return
+          // to the stable practice prompt instead of showing stale dialogue.
+          if (captionClearRef.current) clearTimeout(captionClearRef.current);
+          captionClearRef.current = setTimeout(() => {
+            if (mountedRef.current) setRecognizedSpeech(null);
+          }, 8000);
+        }) as unknown as () => void;
+      }
 
       // Step 3 — Start Vision Agent (pure HTTP, works in Expo Go).
       // The agent reads lesson/language/goals/vocabulary/phrases from call.custom
@@ -170,6 +222,19 @@ export default function AudioLessonScreen() {
         return;
       }
       agentSessionRef.current = agent;
+
+      // The session endpoint returns as soon as the background agent task starts,
+      // not when it has actually joined the Stream call. Wait for Duo's participant
+      // before opening the learner mic so the proactive introduction wins the first
+      // turn instead of ambient audio or an accidental early utterance.
+      if (call) {
+        await waitForAgentParticipant(call, AGENT_JOIN_TIMEOUT_MS);
+        await delay(AGENT_OPENING_HEAD_START_MS);
+        if (!mountedRef.current) return;
+        await call.microphone.enable().catch(() => undefined);
+        if (mountedRef.current) setIsMicEnabled(true);
+      }
+
       setAgentStatus("connected");
     } catch (error) {
       await cleanup({ resetState: false });
@@ -195,40 +260,20 @@ export default function AudioLessonScreen() {
     router.back();
   }, [cleanup]);
 
-  // ── Mic toggle ─────────────────────────────────────────────────────────────
-  const handleToggleMic = useCallback(async () => {
+  // ── Interrupt ──────────────────────────────────────────────────────────────
+  // Mic is always on — the agent's VAD stops it when the user speaks naturally.
+  // Pressing this button forces an immediate interrupt: briefly cycles the mic
+  // off/on so the agent's turn detection resets and it stops mid-sentence.
+  const handleInterrupt = useCallback(async () => {
     if (callPhase !== "active") return;
-    // Optional chaining: if the Stream SDK isn't available (Expo Go) the state
-    // still updates so the button looks correct; audio just won't stream.
     const call = callRef.current;
-    if (isMicEnabled) {
-      await call?.microphone.disable().catch(() => undefined);
-      setIsMicEnabled(false);
-    } else {
-      const granted = await requestPermission("mic");
-      if (granted) {
-        await call?.microphone.enable().catch(() => undefined);
-        setIsMicEnabled(true);
-      } else {
-        setPermissionMessage("Microphone permission was denied.");
-      }
-    }
-  }, [callPhase, isMicEnabled]);
-
-  // ── Camera toggle ──────────────────────────────────────────────────────────
-  const handleToggleCamera = useCallback(async () => {
-    setPermissionMessage(null);
-    if (isCameraEnabled) {
-      setIsCameraEnabled(false);
-      return;
-    }
-    const granted = await requestPermission("camera");
-    if (granted) {
-      setIsCameraEnabled(true);
-    } else {
-      setPermissionMessage("Camera permission was denied.");
-    }
-  }, [isCameraEnabled]);
+    if (!call) return;
+    setIsMicEnabled(false);
+    await call.microphone.disable().catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 100));
+    await call.microphone.enable().catch(() => undefined);
+    if (mountedRef.current) setIsMicEnabled(true);
+  }, [callPhase]);
 
   const isConnecting =
     callPhase === "creating" ||
@@ -236,13 +281,19 @@ export default function AudioLessonScreen() {
     callPhase === "ending" ||
     (callPhase === "active" && agentStatus === "connecting");
   const micDisabled = callPhase !== "active";
+  const practiceItem =
+    practiceItemIndex === null ? null : lesson?.vocabulary[practiceItemIndex];
 
   // ── Lesson not found ───────────────────────────────────────────────────────
   if (!lesson) {
     return (
       <View style={styles.screen}>
         <StatusBar style="dark" />
-        <SafeHeader agentStatus="idle" callPhase="error" />
+        <SafeHeader
+          agentStatus="idle"
+          callPhase="error"
+          onEndCall={() => router.back()}
+        />
         <View
           className="flex-1 items-center justify-center px-8"
           style={{ backgroundColor: "#F0EDFF" }}
@@ -260,7 +311,6 @@ export default function AudioLessonScreen() {
             </Text>
           </TouchableOpacity>
         </View>
-        <AudioTabBar />
       </View>
     );
   }
@@ -268,153 +318,140 @@ export default function AudioLessonScreen() {
   return (
     <View style={styles.screen}>
       <StatusBar style="dark" />
-      <SafeHeader agentStatus={agentStatus} callPhase={callPhase} />
+      <SafeHeader
+        agentStatus={agentStatus}
+        callPhase={callPhase}
+        lessonTitle={lesson.title}
+        onEndCall={() => void handleEndCall()}
+      />
 
-      {/* ── Main content ──────────────────────────────────────────────── */}
-      <View className="flex-1 bg-[#F0EDFF]" style={{ position: "relative" }}>
+      <View className="flex-1 bg-white px-4 pb-4">
         <View
-          className="absolute inset-0 items-center justify-end"
-          style={{ paddingBottom: 90 }}
+          className="flex-1 overflow-hidden rounded-[26px] bg-[#F4F0FF]"
+          style={styles.teacherCard}
         >
-          <Image
-            resizeMode="contain"
-            source={images.mascotWelcome}
-            style={styles.mascotImage}
-          />
-        </View>
+          <View className="flex-1 items-center justify-center pb-[76px] pt-3">
+            <Image
+              resizeMode="contain"
+              source={images.mascotWelcome}
+              style={styles.mascotImage}
+            />
+          </View>
 
-        {/* User PiP */}
-        <View style={styles.pipContainer}>
-          <View className="flex-1 items-center justify-center bg-[#EEE8FF]">
-            <Text className="text-[24px] font-poppins-bold text-lingua-deep-purple">
-              N
-            </Text>
-            <Text className="mt-1 text-[10px] font-poppins-medium text-[#8790AA]">
-              {isCameraEnabled ? "Camera on" : "Camera off"}
-            </Text>
+          <View style={styles.practiceCard}>
+            {isConnecting ? (
+              <View className="flex-row items-center">
+                <ActivityIndicator color="#5B3BF6" size="small" />
+                <Text className="ml-3 flex-1 text-[13px] leading-[19px] font-poppins-medium text-[#69728A]">
+                  {getPhaseLabel(callPhase, agentStatus)}
+                </Text>
+              </View>
+            ) : callPhase === "error" ? (
+              <View className="flex-row items-center">
+                <View className="flex-1 pr-3">
+                  <Text className="text-[14px] leading-[20px] font-poppins-semibold text-[#D14343]">
+                    Connection failed
+                  </Text>
+                  <Text className="mt-1 text-[12px] leading-[17px] font-poppins-regular text-[#69728A]">
+                    {errorMessage ?? "Could not connect to AI teacher."}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  className="h-[36px] justify-center rounded-[11px] bg-[#D14343] px-4"
+                  onPress={() => void handleStartLesson()}
+                >
+                  <Text className="text-[12px] font-poppins-semibold text-white">
+                    Retry
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : IS_EXPO_GO && agentStatus === "connected" ? (
+              <>
+                <Text className="text-[14px] leading-[20px] font-poppins-semibold text-[#1B2340]">
+                  Agent connected - no live audio
+                </Text>
+                <Text className="mt-1 text-[12px] leading-[17px] font-poppins-regular text-[#69728A]">
+                  Use the Android development build for the full lesson.
+                </Text>
+              </>
+            ) : recognizedSpeech ? (
+              <>
+                <Text className="text-[11px] leading-[16px] font-poppins-semibold uppercase tracking-[1px] text-[#7D6BE8]">
+                  I heard
+                </Text>
+                <Text
+                  className="mt-1 text-[18px] leading-[25px] font-poppins-semibold text-[#1B2340]"
+                  numberOfLines={2}
+                  selectable
+                >
+                  {`"${recognizedSpeech}"`}
+                </Text>
+                <Text className="mt-1 text-[12px] leading-[17px] font-poppins-regular text-[#69728A]">
+                  Target: {practiceItem?.term ?? "Wait for Duo's prompt"}
+                  {practiceItem?.pronunciation
+                    ? ` / ${practiceItem.pronunciation}`
+                    : ""}
+                </Text>
+                <Text className="mt-1 text-[10px] leading-[14px] font-poppins-regular text-[#9AA1B3]">
+                  Transcript only. Duo evaluates pronunciation from your audio.
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text className="text-[11px] leading-[16px] font-poppins-semibold uppercase tracking-[1px] text-[#7D6BE8]">
+                  Say this
+                </Text>
+                <Text
+                  className="mt-1 text-[20px] leading-[27px] font-poppins-bold text-[#1B2340]"
+                  selectable
+                >
+                  {practiceItem?.term ?? "Listen to Duo"}
+                </Text>
+                <Text className="mt-1 text-[12px] leading-[17px] font-poppins-regular text-[#69728A]">
+                  {practiceItem
+                    ? `${practiceItem.translation} / ${practiceItem.pronunciation}`
+                    : "Your teacher will give you the first phrase."}
+                </Text>
+              </>
+            )}
           </View>
         </View>
 
-        {/* Permission denied toast */}
         {permissionMessage ? (
           <View style={styles.permissionToast}>
-            <Text className="text-center text-[13px] leading-[18px] font-poppins-medium text-[#D14343]">
+            <Text className="text-center text-[12px] leading-[17px] font-poppins-medium text-[#D14343]">
               {permissionMessage}
             </Text>
           </View>
         ) : null}
 
-        {/* Chat bubble — reflects current call/agent state */}
-        <View style={styles.chatBubble}>
-          {isConnecting ? (
-            <>
-              <ActivityIndicator color="#5B3BF6" size="small" />
-              <Text className="ml-3 flex-1 text-[14px] leading-[20px] font-poppins-medium text-[#5E6785]">
-                {getPhaseLabel(callPhase, agentStatus)}
-              </Text>
-            </>
-          ) : callPhase === "error" ? (
-            <>
-              <View className="flex-1 pr-2">
-                <Text className="text-[14px] leading-[20px] font-poppins-semibold text-[#D14343]">
-                  Connection failed
-                </Text>
-                <Text
-                  className="mt-[2px] text-[12px] leading-[17px] font-poppins-regular text-[#5E6785]"
-                  numberOfLines={2}
-                >
-                  {errorMessage ?? "Could not connect to AI teacher."}
-                </Text>
-              </View>
-              <TouchableOpacity
-                activeOpacity={0.82}
-                className="h-[36px] items-center justify-center rounded-[10px] bg-[#D14343] px-3"
-                onPress={() => void handleStartLesson()}
-              >
-                <Text className="text-[12px] font-poppins-semibold text-white">
-                  Retry
-                </Text>
-              </TouchableOpacity>
-            </>
-          ) : IS_EXPO_GO && agentStatus === "connected" ? (
-            <>
-              <View className="flex-1 pr-2">
-                <Text className="text-[14px] leading-[20px] font-poppins-semibold text-[#1B2340]">
-                  Agent connected · no audio
-                </Text>
-                <Text className="mt-[2px] text-[12px] leading-[17px] font-poppins-regular text-[#5E6785]">
-                  Run{" "}
-                  <Text className="font-poppins-semibold text-[#5B3BF6]">
-                    npx expo run:android
-                  </Text>{" "}
-                  for live audio
-                </Text>
-              </View>
-              <View className="h-[36px] w-[36px] items-center justify-center rounded-full bg-[#FFF4E0]">
-                <Ionicons color="#EBB733" name="information-circle" size={20} />
-              </View>
-            </>
-          ) : (
-            <>
-              <View className="flex-1 pr-2">
-                <Text className="text-[16px] leading-[22px] font-poppins-bold text-[#1B2340]">
-                  {agentStatus === "connected" ? "¡Muy bien!" : "AI Teacher"}
-                </Text>
-                <Text className="mt-[2px] text-[13px] leading-[19px] font-poppins-regular text-[#5E6785]">
-                  {agentStatus === "connected"
-                    ? "That was great! 👏"
-                    : "Your teacher is ready to speak..."}
-                </Text>
-              </View>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                className="h-[36px] w-[36px] items-center justify-center rounded-full bg-[#F4F1FF]"
-              >
-                <Ionicons color="#5B3BF6" name="volume-high" size={17} />
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      </View>
-
-      {/* ── Controls ──────────────────────────────────────────────────── */}
-      <View style={styles.controlsSection}>
-        <View className="flex-row justify-around px-2 pt-5">
-          <CallControl
-            icon={isCameraEnabled ? "videocam" : "videocam-off"}
-            isActive={isCameraEnabled}
-            label="Camera"
-            onPress={handleToggleCamera}
-          />
-          <CallControl
+        <View className="items-center py-5">
+          <MicInterruptButton
             disabled={micDisabled}
-            icon={isMicEnabled ? "mic" : "mic-off"}
             isActive={isMicEnabled}
-            label="Mic"
-            onPress={handleToggleMic}
+            onPress={() => void handleInterrupt()}
           />
-          <CallControl
-            icon="language"
-            isActive={areSubtitlesEnabled}
-            label="Subtitles"
-            onPress={() => setAreSubtitlesEnabled((v) => !v)}
-          />
-          <CallControl
-            icon="call"
-            isEndCall
-            label="End Call"
-            onPress={handleEndCall}
-          />
+          <Text className="mt-3 text-[13px] leading-[18px] font-poppins-medium text-[#646B7E]">
+            {isMicEnabled ? "Listening - speak naturally" : "Microphone is waiting"}
+          </Text>
         </View>
 
-        <View className="mt-4 flex-row justify-around px-6 pb-3">
-          <StatItem label="Speaking" value="Excellent" />
-          <AgentStatItem status={agentStatus} />
-          <StatItem label="Grammar" value="Good" />
+        <View
+          className="flex-row items-center rounded-[20px] border border-[#ECECF2] bg-white px-3 py-4"
+          style={styles.statsCard}
+        >
+          <StatItem
+            color="#24C96B"
+            label="Speaking"
+            value={isMicEnabled ? "Listening" : "Waiting"}
+          />
+          <View className="h-[34px] w-px bg-[#E9E9F0]" />
+          <StatItem color="#6484E8" label="Pronunciation" value="AI feedback" />
+          <View className="h-[34px] w-px bg-[#E9E9F0]" />
+          <StatItem color="#6E55C9" label="Grammar" value="Live" />
         </View>
       </View>
-
-      <AudioTabBar />
     </View>
   );
 }
@@ -424,43 +461,60 @@ export default function AudioLessonScreen() {
 function SafeHeader({
   agentStatus,
   callPhase,
+  lessonTitle,
+  onEndCall,
 }: {
   agentStatus: AgentStatus;
   callPhase: CallPhase;
+  lessonTitle?: string;
+  onEndCall: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const { color, label } = headerStatus(callPhase, agentStatus);
 
   return (
     <View className="bg-white" style={{ paddingTop: Math.max(insets.top, 12) }}>
-      <View className="flex-row items-center px-4 pb-2 pt-1">
+      <View className="flex-row items-center px-3 pb-1 pt-1">
         <TouchableOpacity
           activeOpacity={0.72}
           accessibilityLabel="Go back"
           accessibilityRole="button"
           className="h-10 w-10 items-center justify-center"
-          onPress={() => router.back()}
+          onPress={onEndCall}
         >
-          <Ionicons color="#1B2340" name="chevron-back" size={26} />
+          <Ionicons color="#1B2340" name="chevron-back" size={25} />
         </TouchableOpacity>
-        <Text className="ml-1 flex-1 text-[20px] leading-[26px] font-poppins-bold text-[#1B2340]">
-          AI Teacher
-        </Text>
-        <View className="flex-row items-center">
-          <Ionicons color="#1B2340" name="videocam-outline" size={22} />
-          <Text className="ml-[3px] mr-4 text-[13px] font-poppins-semibold text-[#1B2340]">
-            12
+        <View className="flex-1 items-center px-2">
+          <Text className="text-center text-[16px] leading-[22px] font-poppins-semibold text-[#1B2340]">
+            AI Teacher
           </Text>
-          <Ionicons color="#1B2340" name="notifications-outline" size={22} />
+          {lessonTitle ? (
+            <Text
+              className="mt-0.5 text-center text-[10px] leading-[14px] font-poppins-medium text-[#8B94A8]"
+              numberOfLines={1}
+            >
+              {lessonTitle}
+            </Text>
+          ) : null}
         </View>
+        <TouchableOpacity
+          activeOpacity={0.82}
+          accessibilityLabel="End call"
+          accessibilityRole="button"
+          className="mt-2 h-12 w-12 items-center justify-center rounded-full bg-[#E9414B]"
+          onPress={onEndCall}
+          style={styles.endCallButton}
+        >
+          <Ionicons color="#FFFFFF" name="call" size={22} />
+        </TouchableOpacity>
       </View>
-      <View className="flex-row items-center px-5 pb-2">
+      <View className="flex-row items-center px-3 pb-3">
         <View
-          className="mr-2 h-[8px] w-[8px] rounded-full"
+          className="mr-2 h-[7px] w-[7px] rounded-full"
           style={{ backgroundColor: color }}
         />
         <Text
-          className="text-[13px] leading-[18px] font-poppins-medium"
+          className="text-[12px] leading-[17px] font-poppins-medium"
           style={{ color }}
         >
           {label}
@@ -472,198 +526,69 @@ function SafeHeader({
 
 // ─── Controls ─────────────────────────────────────────────────────────────────
 
-type CallControlProps = {
-  disabled?: boolean;
-  icon: keyof typeof Ionicons.glyphMap;
-  isActive?: boolean;
-  isEndCall?: boolean;
-  label: string;
-  onPress: () => void;
-};
-
-function CallControl({
-  disabled = false,
-  icon,
-  isActive = true,
-  isEndCall = false,
-  label,
+function MicInterruptButton({
+  disabled,
+  isActive,
   onPress,
-}: CallControlProps) {
-  const circleClass = isEndCall
-    ? "bg-[#FF4045]"
-    : isActive
-      ? "bg-white"
-      : "bg-[#1A2545]";
-  const iconColor = isEndCall
-    ? "#FFFFFF"
-    : disabled
-      ? "#4A5268"
-      : isActive
-        ? "#091A4F"
-        : "#6A78A0";
-
+}: {
+  disabled: boolean;
+  isActive: boolean;
+  onPress: () => void;
+}) {
   return (
     <TouchableOpacity
       activeOpacity={0.82}
-      accessibilityLabel={label}
+      accessibilityLabel={isActive ? "Tap to interrupt AI" : "Microphone"}
       accessibilityRole="button"
-      className={`flex-1 items-center ${disabled ? "opacity-40" : ""}`}
+      className={disabled ? "opacity-40" : ""}
       disabled={disabled}
       onPress={onPress}
     >
       <View
-        className={`h-[64px] w-[64px] items-center justify-center rounded-full ${circleClass}`}
-        style={isActive && !isEndCall ? styles.callButtonShadow : undefined}
+        className="h-[72px] w-[72px] items-center justify-center rounded-full bg-white"
+        style={isActive ? styles.micActiveGlow : styles.micIdleShadow}
       >
-        <Ionicons color={iconColor} name={icon} size={28} />
+        <Ionicons
+          color={isActive ? "#17223C" : "#9AA1B3"}
+          name={isActive ? "mic-outline" : "mic-off-outline"}
+          size={31}
+        />
       </View>
-      <Text className="mt-2 text-center text-[12px] leading-[16px] font-poppins-medium text-white">
-        {label}
-      </Text>
     </TouchableOpacity>
   );
 }
 
-// ─── Stats ────────────────────────────────────────────────────────────────────
-
-function StatItem({ label, value }: { label: string; value: string }) {
+function StatItem({
+  color,
+  label,
+  value,
+}: {
+  color: string;
+  label: string;
+  value: string;
+}) {
   return (
-    <View className="items-center">
-      <Text className="text-[11px] leading-[15px] font-poppins-regular text-[#8B94AD]">
+    <View className="flex-1 items-center px-1">
+      <Text className="text-[10px] leading-[14px] font-poppins-regular text-[#8B94A8]">
         {label}
       </Text>
-      <Text className="mt-[2px] text-[13px] leading-[18px] font-poppins-semibold text-[#25C636]">
+      <Text
+        className="mt-1 text-center text-[11px] leading-[15px] font-poppins-semibold"
+        style={{ color }}
+      >
         {value}
       </Text>
     </View>
   );
 }
 
-const AGENT_STATUS_CONFIG: Record<AgentStatus, { color: string; label: string }> =
-  {
-    connected: { color: "#25C636", label: "Connected" },
-    connecting: { color: "#EBB733", label: "Connecting" },
-    failed: { color: "#D14343", label: "Failed" },
-    idle: { color: "#8B94AD", label: "Idle" },
-  };
-
-function AgentStatItem({ status }: { status: AgentStatus }) {
-  const { color, label } = AGENT_STATUS_CONFIG[status];
-  return (
-    <View className="items-center">
-      <Text className="text-[11px] leading-[15px] font-poppins-regular text-[#8B94AD]">
-        AI Teacher
-      </Text>
-      <Text
-        className="mt-[2px] text-[13px] leading-[18px] font-poppins-semibold"
-        style={{ color }}
-      >
-        {label}
-      </Text>
-    </View>
-  );
-}
-
-// ─── Tab bar ──────────────────────────────────────────────────────────────────
-
-function AudioTabBar() {
-  const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const barWidth = Math.min(width - BAR_HORIZONTAL_MARGIN * 2, BAR_MAX_WIDTH);
-
-  const tabs: Array<{
-    activeIcon: ImageSourcePropType;
-    icon: ImageSourcePropType;
-    isActive?: boolean;
-    label: string;
-    onPress: () => void;
-  }> = [
-    {
-      activeIcon: images.tabHomeActive,
-      icon: images.tabHome,
-      label: "Home",
-      onPress: () => router.replace("/"),
-    },
-    {
-      activeIcon: images.tabLearnActive,
-      icon: images.tabLearn,
-      isActive: true,
-      label: "Learn",
-      onPress: () => router.back(),
-    },
-    {
-      activeIcon: images.tabAiTeacherActive,
-      icon: images.tabAiTeacher,
-      label: "AI Teacher",
-      onPress: () => router.replace("/ai-teacher"),
-    },
-    {
-      activeIcon: images.tabChatActive,
-      icon: images.tabChat,
-      label: "Chat",
-      onPress: () => router.replace("/chat"),
-    },
-    {
-      activeIcon: images.tabProfileActive,
-      icon: images.tabProfile,
-      label: "Profile",
-      onPress: () => router.replace("/profile"),
-    },
-  ];
-
-  return (
-    <View
-      className="items-center bg-white px-3 pt-2"
-      style={{ paddingBottom: Math.max(insets.bottom, 10) }}
-    >
-      <View
-        className="h-[86px] flex-row items-center rounded-[30px] bg-white px-2"
-        style={[styles.tabBarShadow, { width: barWidth }]}
-      >
-        {tabs.map((tab) => (
-          <Pressable
-            accessibilityLabel={tab.label}
-            accessibilityRole="button"
-            accessibilityState={tab.isActive ? { selected: true } : {}}
-            key={tab.label}
-            onPress={tab.onPress}
-            style={({ pressed }) => [
-              styles.tabItem,
-              { opacity: pressed ? 0.72 : 1 },
-            ]}
-          >
-            <Image
-              resizeMode="contain"
-              source={tab.isActive ? tab.activeIcon : tab.icon}
-              style={{ height: 27, width: 27 }}
-            />
-            <Text
-              className={`mt-[5px] w-full text-center text-[11px] leading-4 font-poppins-semibold ${
-                tab.isActive ? "text-[#6E48F6]" : "text-[#7E849E]"
-              }`}
-              numberOfLines={1}
-            >
-              {tab.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-// ─── SDK join (skipped in Expo Go, works in dev build / standalone) ──────────
-
-// True when running inside Expo Go (appOwnership === 'expo').
-// In Expo Go, WebRTC native modules are not bundled, so we skip the SDK join
-// entirely rather than letting Metro throw a red-screen error.
+// SDK join (skipped in Expo Go, works in dev build / standalone)
 const IS_EXPO_GO = Constants.appOwnership === "expo";
 
 async function tryJoinCall(
   session: StreamAudioCallSession,
   callRef: React.MutableRefObject<Call | null>,
   clientRef: React.MutableRefObject<StreamVideoClient | null>,
-  setIsMicEnabled: (v: boolean) => void,
 ): Promise<void> {
   if (IS_EXPO_GO) {
     // Native WebRTC is not available in Expo Go.
@@ -694,17 +619,49 @@ async function tryJoinCall(
 
     await call.join();
 
-    const micGranted = await requestPermission("mic");
-    if (micGranted) {
-      await call.microphone.enable();
-      setIsMicEnabled(true);
-    }
+    // Pre-request mic permission so the auto-enable in handleStartLesson is instant.
+    await requestPermission("mic").catch(() => undefined);
   } catch {
     // Join failed for an unexpected reason — agent call still continues above.
   }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function waitForAgentParticipant(
+  call: Call,
+  timeoutMs: number,
+): Promise<void> {
+  if (
+    call.state.participants.some(
+      (participant) => participant.userId === AI_TEACHER_USER_ID,
+    )
+  ) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    let unsubscribe: (() => void) | undefined;
+    const finish = () => {
+      clearTimeout(timeout);
+      unsubscribe?.();
+      resolve();
+    };
+    const timeout = setTimeout(finish, timeoutMs);
+
+    unsubscribe = call.on("call.session_participant_joined", (event) => {
+      if (event.participant.user.id === AI_TEACHER_USER_ID) {
+        finish();
+      }
+    });
+  });
+}
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
 
 function headerStatus(
   callPhase: CallPhase,
@@ -769,84 +726,72 @@ async function requestPermission(type: "camera" | "mic"): Promise<boolean> {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  callButtonShadow: {
+  endCallButton: {
     elevation: 4,
-    shadowColor: "#FFFFFF",
+    shadowColor: "#B7232C",
     shadowOffset: { height: 2, width: 0 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-  },
-  chatBubble: {
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    bottom: 14,
-    elevation: 6,
-    flexDirection: "row",
-    left: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    position: "absolute",
-    right: 14,
-    shadowColor: "#1B2340",
-    shadowOffset: { height: 4, width: 0 },
-    shadowOpacity: 0.1,
-    shadowRadius: 14,
-  },
-  controlsSection: {
-    backgroundColor: "#0C1230",
-    paddingBottom: 6,
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    transform: [{ rotate: "135deg" }],
   },
   mascotImage: {
-    height: 280,
-    width: 240,
+    height: 245,
+    width: 220,
+  },
+  micActiveGlow: {
+    elevation: 9,
+    shadowColor: "#B9A9FF",
+    shadowOffset: { height: 5, width: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+  },
+  micIdleShadow: {
+    elevation: 4,
+    shadowColor: "#A9AFC0",
+    shadowOffset: { height: 3, width: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
   },
   permissionToast: {
     alignItems: "center",
     backgroundColor: "#FFF0F0",
-    borderRadius: 14,
-    bottom: 100,
-    left: 14,
+    borderRadius: 13,
+    marginTop: 8,
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    position: "absolute",
-    right: 14,
-    zIndex: 10,
+    paddingVertical: 9,
   },
-  pipContainer: {
-    borderColor: "#FFFFFF",
-    borderRadius: 14,
-    borderWidth: 3,
-    elevation: 6,
-    height: 108,
-    overflow: "hidden",
+  practiceCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    bottom: 12,
+    elevation: 5,
+    left: 12,
+    minHeight: 78,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
     position: "absolute",
-    right: 14,
-    shadowColor: "#0D132B",
+    right: 12,
+    shadowColor: "#62559A",
     shadowOffset: { height: 4, width: 0 },
-    shadowOpacity: 0.14,
-    shadowRadius: 10,
-    top: 12,
-    width: 80,
+    shadowOpacity: 0.1,
+    shadowRadius: 11,
   },
   screen: {
     backgroundColor: "#FFFFFF",
     flex: 1,
   },
-  tabBarShadow: {
-    elevation: 12,
-    shadowColor: "#0D132B",
-    shadowOffset: { height: -4, width: 0 },
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
+  statsCard: {
+    elevation: 3,
+    shadowColor: "#9398A8",
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
   },
-  tabItem: {
-    alignItems: "center",
-    flex: 1,
-    height: 76,
-    justifyContent: "center",
-    minWidth: 0,
-    paddingTop: 6,
-    zIndex: 1,
+  teacherCard: {
+    elevation: 2,
+    shadowColor: "#B8AAE8",
+    shadowOffset: { height: 3, width: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
   },
 });

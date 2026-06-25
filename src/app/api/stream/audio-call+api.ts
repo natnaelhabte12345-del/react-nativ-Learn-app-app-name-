@@ -161,7 +161,9 @@ export async function POST(request: Request) {
           settings_override: {
             audio: {
               default_device: "speaker",
-              mic_default_on: true,
+              // Duo leads the lesson. The client enables the learner's mic only
+              // after the agent has joined and begun its opening turn.
+              mic_default_on: false,
               speaker_default_on: true,
             },
           },
