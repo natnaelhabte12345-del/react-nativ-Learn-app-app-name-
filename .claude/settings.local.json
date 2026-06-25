@@ -9,7 +9,8 @@
       "Bash(adb -s emulator-5554 reverse --list)",
       "mcp__context7__query-docs",
       "mcp__context7__resolve-library-id",
-      "Bash(mv \"src/app/lesson/[lessonId].tsx\" \"src/app/lesson/[lessonId]/index.tsx\" && echo \"moved OK\" && find src/app/lesson -type f)"
+      "Bash(mv \"src/app/lesson/[lessonId].tsx\" \"src/app/lesson/[lessonId]/index.tsx\" && echo \"moved OK\" && find src/app/lesson -type f)",
+      "Bash(npm run *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Nati\\Desktop\\Dualingo.clone\\src\\app\\lesson"
