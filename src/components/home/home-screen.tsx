@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useEffect } from "react";
 
 import { AppLoadingScreen } from "@/components/ui/app-loading-screen";
 import { images } from "@/constants/images";
@@ -19,6 +20,7 @@ import { defaultLanguageId, languages } from "@/data/languages";
 import { lessons } from "@/data/lessons";
 import { units } from "@/data/units";
 import { useLanguageStore } from "@/store/language-store";
+import { useProgressStore } from "@/store/progress-store";
 import type { LanguageId, Lesson } from "@/types/learning";
 
 const DAILY_GOAL_XP = 20;
@@ -48,6 +50,14 @@ export function HomeScreen() {
   const hasHydrated = useLanguageStore((state) => state.hasHydrated);
   const selectedLanguageId =
     useLanguageStore((state) => state.selectedLanguageId) ?? defaultLanguageId;
+  const streak = useProgressStore((state) => state.streak);
+  const dailyXp = useProgressStore((state) => state.dailyXp);
+  const recordActivity = useProgressStore((state) => state.recordActivity);
+
+  // Record that the user opened the app today — updates streak if it's a new day
+  useEffect(() => {
+    recordActivity();
+  }, [recordActivity]);
 
   if (!isLoaded || !hasHydrated) {
     return <AppLoadingScreen message="Loading your dashboard..." />;
@@ -66,22 +76,14 @@ export function HomeScreen() {
       : lessons.filter((lesson) => lesson.languageId === defaultLanguageId);
   const currentLesson: Lesson | null =
     visibleLessons[1] ?? visibleLessons[0] ?? null;
-  const completedLesson = visibleLessons.length > 1 ? visibleLessons[0] : null;
   const currentUnit =
     (currentLesson
       ? units.find((unit) => unit.id === currentLesson.unitId)
       : null) ??
     units.find((unit) => unit.languageId === selectedLanguage.id) ??
     null;
-  const earnedXp = completedLesson
-    ? Math.min(
-        DAILY_GOAL_XP,
-        completedLesson.xpReward +
-          completedLesson.vocabulary.length +
-          completedLesson.phrases.length,
-      )
-    : Math.min(DAILY_GOAL_XP, (currentLesson?.vocabulary.length ?? 0) * 2);
-  const progress = earnedXp / DAILY_GOAL_XP;
+  const earnedXp = Math.min(dailyXp, DAILY_GOAL_XP);
+  const progress = DAILY_GOAL_XP > 0 ? earnedXp / DAILY_GOAL_XP : 0;
   const displayName =
     user?.firstName ??
     user?.username ??
@@ -120,7 +122,7 @@ export function HomeScreen() {
           <View className="flex-row items-center">
             <Text className="text-[25px] leading-[29px]">{"\u{1F525}"}</Text>
             <Text className="ml-2 text-[17px] leading-[23px] font-poppins-semibold text-[#39415f]">
-              12
+              {streak}
             </Text>
             <View className="ml-5 h-[34px] w-[30px] items-center justify-center">
               <Ionicons color="#111936" name="notifications-outline" size={25} />
@@ -148,7 +150,6 @@ export function HomeScreen() {
 
         <View className="mt-2">
           <PlanItem
-            completed
             iconType="book"
             title="Lesson"
             subtitle={getLessonPlanSubtitle(currentLesson)}

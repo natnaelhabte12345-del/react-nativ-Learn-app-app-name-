@@ -68,23 +68,27 @@ def _selected_language(kwargs: dict[str, Any]) -> str:
 
 def _teacher_instructions(target_language: str) -> str:
     return f"""
-You are Duo, a voice-only AI language teacher.
+You are Duo, a warm and energetic voice language teacher who genuinely loves helping beginners.
+You sound like a real human teacher — patient, lively, and present in the conversation.
 
-Default behavior:
-- Always speak English.
-- Teach {target_language} through English.
-- Keep responses short enough for a voice lesson.
-- Prefer one question or exercise at a time.
-- Give concise corrections, then let the learner try again.
-- Use simple examples before grammar explanations.
-- Never switch the teaching language away from English unless the learner explicitly asks.
+How you speak:
+- One or two short, natural sentences per turn. Never longer.
+- Use contractions ("you're", "let's", "that's") and speak with warmth and a light smile in your voice.
+- Ask one clear question or give one clear instruction, then stop and wait for the learner to respond.
+- No lists, markdown, bullet points, or visual references — everything you say is heard, not read.
+- When the learner genuinely gets something right, a quick "Nice!" or "That's it!" is plenty. Don't pile on compliments.
 
-Lesson style:
-- Start with a quick greeting and ask what the learner wants to practice.
-- When introducing {target_language} words or phrases, say them clearly and then explain them in English.
-- Ask the learner to repeat, translate, answer, or choose between options.
-- Adapt difficulty based on the learner's answers.
-- Avoid long lectures, markdown, bullet lists, emojis, and visual references.
+How you teach {target_language}:
+- One word or phrase at a time. Give the English meaning first, then say the {target_language} word slowly and clearly.
+- Right away, invite them to repeat: "Can you try that?" or "Your turn!"
+- Listen carefully to what they actually say, then respond to that before moving on.
+- If they stumble: "No worries — let me say it once more," model it again, and invite another try.
+- Only move to the next word once the learner has had a real chance to practice the current one.
+
+Stay in scope:
+- Teach ONLY this lesson's vocabulary, phrases, and goal. Nothing outside it.
+- Teach only {target_language}. Never drift to another language.
+- If the learner goes off-topic, smile and bring them gently back to the lesson.
 """.strip()
 
 
@@ -220,17 +224,11 @@ Current lesson:
 - Scenario: {scenario}
 - Teaching style: {voice_style}
 
-Lesson goals:
-{_string_list(lesson.get("goals"), "title")}
-
-Vocabulary:
+WORDS TO TEACH — teach ONLY these, in this exact order:
 {_vocabulary_list(lesson.get("vocabulary"))}
 
-Phrases:
+KEY PHRASE — guide the learner toward this after all vocabulary words:
 {_phrase_list(lesson.get("phrases"))}
-
-Target phrases (guide the learner toward saying or using these):
-{target_phrases if target_phrases else "None specified."}
 
 Teaching prompt:
 {system_prompt}
@@ -238,30 +236,49 @@ Teaching prompt:
 Correction style:
 {correction_style}
 
-Use only this lesson context unless the learner asks a direct follow-up.
+STRICT RULE: Never say, teach, or mention any word that is not listed above.
+No synonyms. No bonus vocabulary. No words from other languages.
+No words from other lessons. If you are unsure whether a word belongs here, skip it.
+If the learner asks about something off-topic, smile and redirect them to the next word on the list.
 """.strip()
 
 
 def _opening_prompt(custom: dict[str, Any]) -> str:
     lesson = _as_dict(custom.get("lesson"))
-    prompt = _as_dict(custom.get("aiTeacherPrompt") or lesson.get("aiTeacherPrompt"))
-    opening_line = prompt.get("openingLine")
-
-    if isinstance(opening_line, str) and opening_line.strip():
-        return (
-            "Greet the learner in English, then start the lesson with this opening "
-            f"line adapted naturally: {opening_line.strip()}"
-        )
-
     language = _as_dict(custom.get("language"))
     target_language = (
         language.get("name")
         if isinstance(language.get("name"), str)
         else _selected_language({})
     )
+    lesson_title = (
+        lesson.get("title")
+        if isinstance(lesson.get("title"), str)
+        else f"{target_language} lesson"
+    )
+    vocabulary = lesson.get("vocabulary")
+    first_item = (
+        _as_dict(vocabulary[0])
+        if isinstance(vocabulary, list) and vocabulary
+        else {}
+    )
+    first_term = first_item.get("term")
+    first_translation = first_item.get("translation")
+
+    if isinstance(first_term, str) and isinstance(first_translation, str):
+        return (
+            "Begin speaking immediately and do not wait for learner input. "
+            f"You are starting the lesson '{lesson_title}'. Give one short greeting, "
+            f"then teach exactly the first vocabulary item: '{first_term}', meaning "
+            f"'{first_translation}'. Say '{first_term}' clearly and ask the learner "
+            "to repeat it. Do not introduce any other word or phrase in this turn."
+        )
+
     return (
-        "Greet the learner in English and ask one short warm-up question for "
-        f"their {target_language} lesson."
+        "Begin speaking immediately. Do not wait for the learner to say anything. "
+        "Open with one short, warm English greeting, then jump straight into the first "
+        f"small step of their {target_language} lesson: introduce the first word or "
+        "phrase and ask them to try it."
     )
 
 
@@ -272,7 +289,7 @@ def _build_llm() -> Any:
     Falls back to OpenAI Realtime when only OPENAI_API_KEY is available.
     """
     if os.getenv("GOOGLE_API_KEY"):
-        gemini_model = os.getenv("GEMINI_REALTIME_MODEL", "gemini-2.0-flash-live-001")
+        gemini_model = os.getenv("GEMINI_REALTIME_MODEL", "gemini-3.1-flash-live-preview")
         return gemini.Realtime(model=gemini_model)
 
     realtime_model = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime-2")
@@ -312,7 +329,9 @@ async def join_call(
         agent.llm.set_instructions(instructions)
 
     async with agent.join(call, participant_wait_timeout=participant_wait_timeout):
-        await agent.simple_response(_opening_prompt(custom), interrupt=False)
+        # Force the proactive opening turn. With interrupt=False, early microphone
+        # input can become the active realtime turn and absorb or delay this prompt.
+        await agent.simple_response(_opening_prompt(custom), interrupt=True)
         await agent.finish()
 
 
