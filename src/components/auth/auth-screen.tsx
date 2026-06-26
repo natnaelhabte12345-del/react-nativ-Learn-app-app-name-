@@ -19,6 +19,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { identifyUser } from "@/lib/analytics";
 import { images } from "@/constants/images";
 import { useLanguageStore } from "@/store/language-store";
 
@@ -123,7 +124,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
 
   const trackSignInCompleted = (method: string, clerkUserId?: string) => {
     if (clerkUserId) {
-      posthog.identify(clerkUserId);
+      identifyUser(posthog, clerkUserId, selectedLanguageId);
     }
 
     posthog.capture("sign_in_completed", {
@@ -162,6 +163,11 @@ export function AuthScreen({ mode }: AuthScreenProps) {
             "Your Clerk session has a pending task. Check your Clerk dashboard configuration.",
           );
           return;
+        }
+
+        // First identify after sign-up: $set_once stamps signup_date here.
+        if (session.user?.id) {
+          identifyUser(posthog, session.user.id, selectedLanguageId);
         }
 
         const target = hasHydrated && selectedLanguageId !== null ? "/" : "/language-selection";
@@ -324,9 +330,11 @@ export function AuthScreen({ mode }: AuthScreenProps) {
 
   useEffect(() => {
     if (isSignedIn && userId) {
-      posthog.identify(userId);
+      // Catch-all identify (covers OAuth/SSO completions). Idempotent with the
+      // explicit identify calls in the email sign-in/sign-up flows.
+      identifyUser(posthog, userId, selectedLanguageId);
     }
-  }, [isSignedIn, posthog, userId]);
+  }, [isSignedIn, posthog, selectedLanguageId, userId]);
 
   return (
     <SafeAreaView style={styles.safeArea}>

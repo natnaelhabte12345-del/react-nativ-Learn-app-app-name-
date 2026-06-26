@@ -85,10 +85,21 @@ How you teach {target_language}:
 - If they stumble: "No worries — let me say it once more," model it again, and invite another try.
 - Only move to the next word once the learner has had a real chance to practice the current one.
 
+Keep it short:
+- This is a quick 2-3 minute lesson, not a long class. Keep a brisk pace.
+- One, at most two, repetitions per word — once the learner has had a genuine try, move straight on to the next word. Don't over-drill.
+
 Stay in scope:
 - Teach ONLY this lesson's vocabulary, phrases, and goal. Nothing outside it.
 - Teach only {target_language}. Never drift to another language.
 - If the learner goes off-topic, smile and bring them gently back to the lesson.
+
+Wrapping up:
+- Once the learner has practiced every word and managed the key phrase, give one warm,
+  short congratulation: tell them they did it and finished the lesson.
+- Then clearly let them know they can hang up whenever they're ready (for example:
+  "That's the whole lesson — you can hang up whenever you like, or stay and practice more").
+- Don't start teaching new material after the congratulation. Keep it brief and let them go.
 """.strip()
 
 
@@ -107,56 +118,53 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return {}
 
 
-def _string_list(items: Any, key: str) -> str:
-    if not isinstance(items, list):
-        return "None provided."
+def _lesson_plan(lesson: dict[str, Any]) -> str:
+    """Build the exact, ordered teaching plan from the same vocabulary and key
+    phrase the learner sees on the lesson screen. A numbered step list keeps the
+    realtime model from drifting to random words — it must walk these in order.
+    """
+    steps: list[str] = []
 
-    lines: list[str] = []
-    for item in items:
-        data = _as_dict(item)
-        value = data.get(key)
-        if isinstance(value, str) and value.strip():
-            lines.append(f"- {value.strip()}")
+    vocabulary = lesson.get("vocabulary")
+    if isinstance(vocabulary, list):
+        for item in vocabulary:
+            data = _as_dict(item)
+            term = data.get("term")
+            translation = data.get("translation")
+            if not (isinstance(term, str) and isinstance(translation, str)):
+                continue
+            pronunciation = data.get("pronunciation")
+            pron = (
+                f', pronounced "{pronunciation.strip()}"'
+                if isinstance(pronunciation, str) and pronunciation.strip()
+                else ""
+            )
+            steps.append(
+                f'Teach the word "{term}" — it means "{translation}"{pron}. '
+                f'Give the English meaning, say "{term}" slowly and clearly, then ask '
+                "the learner to repeat it and respond to their attempt before moving on."
+            )
 
-    return "\n".join(lines) if lines else "None provided."
+    phrases = lesson.get("phrases")
+    first_phrase = (
+        _as_dict(phrases[0]) if isinstance(phrases, list) and phrases else {}
+    )
+    phrase_text = first_phrase.get("text")
+    phrase_translation = first_phrase.get("translation")
+    if isinstance(phrase_text, str) and isinstance(phrase_translation, str):
+        steps.append(
+            f'Put it all together: guide the learner to say the key phrase '
+            f'"{phrase_text}" — it means "{phrase_translation}". Build up to it, '
+            "then have them say the whole phrase."
+        )
 
+    if not steps:
+        return (
+            "No specific lesson content was provided — keep the learner gently on "
+            "basic greetings and do not invent new vocabulary."
+        )
 
-def _vocabulary_list(items: Any) -> str:
-    if not isinstance(items, list):
-        return "None provided."
-
-    lines: list[str] = []
-    for item in items:
-        data = _as_dict(item)
-        term = data.get("term")
-        translation = data.get("translation")
-        pronunciation = data.get("pronunciation")
-        if isinstance(term, str) and isinstance(translation, str):
-            detail = f"- {term}: {translation}"
-            if isinstance(pronunciation, str) and pronunciation.strip():
-                detail += f" ({pronunciation})"
-            lines.append(detail)
-
-    return "\n".join(lines) if lines else "None provided."
-
-
-def _phrase_list(items: Any) -> str:
-    if not isinstance(items, list):
-        return "None provided."
-
-    lines: list[str] = []
-    for item in items:
-        data = _as_dict(item)
-        text = data.get("text")
-        translation = data.get("translation")
-        pronunciation = data.get("pronunciation")
-        if isinstance(text, str) and isinstance(translation, str):
-            detail = f"- {text}: {translation}"
-            if isinstance(pronunciation, str) and pronunciation.strip():
-                detail += f" ({pronunciation})"
-            lines.append(detail)
-
-    return "\n".join(lines) if lines else "None provided."
+    return "\n".join(f"Step {index + 1}. {step}" for index, step in enumerate(steps))
 
 
 def _call_custom(payload: Any) -> dict[str, Any]:
@@ -190,58 +198,42 @@ def _teacher_instructions_from_call(custom: dict[str, Any]) -> str:
         lesson.get("description") if isinstance(lesson.get("description"), str) else ""
     )
     scenario = prompt.get("scenario") if isinstance(prompt.get("scenario"), str) else ""
-    system_prompt = (
-        prompt.get("systemPrompt") if isinstance(prompt.get("systemPrompt"), str) else ""
-    )
     correction_style = (
         prompt.get("correctionStyle")
         if isinstance(prompt.get("correctionStyle"), str)
-        else "Correct one issue at a time, then ask the learner to repeat."
+        else "Cheer the effort first, gently fix one word or sound, then invite another try."
     )
     voice_style = (
         prompt.get("voiceStyle")
         if isinstance(prompt.get("voiceStyle"), str)
         else "encouraging and friendly"
     )
-    target_phrases_raw = prompt.get("targetPhrases")
-    target_phrases = (
-        "\n".join(
-            f"- {p}" for p in target_phrases_raw if isinstance(p, str) and p.strip()
-        )
-        if isinstance(target_phrases_raw, list)
-        else ""
-    )
+
+    lesson_plan = _lesson_plan(lesson)
 
     base = _teacher_instructions(target_language)
 
     return f"""
 {base}
 
-Current lesson:
-- Language: {target_language}
-- Lesson: {lesson_title}
-- Description: {lesson_description}
-- Scenario: {scenario}
-- Teaching style: {voice_style}
+THIS LESSON — "{lesson_title}" ({target_language})
+{lesson_description}
+Scenario: {scenario}
+Teaching voice: {voice_style}
 
-WORDS TO TEACH — teach ONLY these, in this exact order:
-{_vocabulary_list(lesson.get("vocabulary"))}
+YOUR LESSON PLAN — these are exactly the items the learner sees on their screen for
+this lesson. Teach them strictly in this order, ONE step per turn. Do not skip a step,
+do not reorder them, do not merge two steps into one turn, and do not end the lesson
+until every step below is done:
 
-KEY PHRASE — guide the learner toward this after all vocabulary words:
-{_phrase_list(lesson.get("phrases"))}
+{lesson_plan}
 
-Teaching prompt:
-{system_prompt}
-
-Correction style:
-{correction_style}
-
-STRICT RULE: The {target_language} you TEACH must come only from the words and phrases listed above —
-in that language, no synonyms, no bonus vocabulary, no words from other lessons or other languages.
-If you are unsure whether a {target_language} word belongs here, skip it.
-You may still speak English freely for scaffolding: greetings, giving meanings, corrections,
-encouragement, and turn-taking ("Can you try that?", "Your turn!").
-If the learner asks about something off-topic, smile and redirect them to the next word on the list.
+HARD RULES:
+- The ONLY {target_language} you may teach are the words and the key phrase in the plan above, exactly as written. No synonyms, no extra vocabulary, no words from other lessons or other languages.
+- Work through the steps in order. Never jump ahead to a later word or to the key phrase before the learner has practiced the current step.
+- {correction_style}
+- You may speak English freely for meanings, encouragement, corrections, and turn-taking ("Can you try that?", "Your turn!").
+- If the learner goes off-topic, smile, give one short reply, then bring them straight back to the current step.
 """.strip()
 
 
