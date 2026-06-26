@@ -18,6 +18,7 @@ import { LogoutButton } from "@/components/auth/logout-button";
 import { AppLoadingScreen } from "@/components/ui/app-loading-screen";
 import { images } from "@/constants/images";
 import { defaultLanguageId, languages } from "@/data/languages";
+import { identifyUser, trackLanguageSelected } from "@/lib/analytics";
 import { useLanguageStore } from "@/store/language-store";
 import type { LanguageId, LearningLanguage } from "@/types/learning";
 
@@ -25,7 +26,7 @@ const homeHref = "/" as Href;
 
 export default function LanguageSelectionScreen() {
   const posthog = usePostHog();
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn, userId } = useAuth();
   const hasHydrated = useLanguageStore((state) => state.hasHydrated);
   const persistedLanguageId = useLanguageStore(
     (state) => state.selectedLanguageId,
@@ -52,9 +53,15 @@ export default function LanguageSelectionScreen() {
   }, [searchQuery]);
 
   const handleSelectLanguage = (languageId: LanguageId) => {
-    posthog.capture("language_selected", {
+    const language = languages.find((item) => item.id === languageId);
+    trackLanguageSelected(posthog, {
       language_code: languageId,
+      language_name: language?.name ?? languageId,
     });
+    // Keep the person's preferred_language current now that they've chosen one.
+    if (userId) {
+      identifyUser(posthog, userId, languageId);
+    }
     setSelectedLanguageId(languageId);
     setSelectedLanguage(languageId);
     router.replace(homeHref);

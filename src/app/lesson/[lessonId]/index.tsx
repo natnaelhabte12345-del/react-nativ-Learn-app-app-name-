@@ -98,23 +98,11 @@ export default function LessonDetailScreen() {
           />
         </View>
 
-        <Section title="Goals">
-          {lesson.goals.map((goal) => (
-            <View
-              className="mb-3 rounded-[18px] border border-[#EEF1F7] bg-white px-4 py-4"
-              key={goal.id}
-            >
-              <Text className="text-[15px] leading-[21px] font-poppins-semibold text-text-primary">
-                {goal.title}
-              </Text>
-              <Text className="mt-1 text-[13px] leading-[20px] font-poppins-regular text-[#727B96]">
-                {goal.description}
-              </Text>
-            </View>
-          ))}
-        </Section>
-
-        <Section title="Vocabulary">
+        <Section title="What you'll learn">
+          <Text className="mb-3 -mt-1 text-[13px] leading-[19px] font-poppins-regular text-[#727B96]">
+            {lesson.vocabulary.length} words with your AI teacher, then put them
+            together in one phrase. About {lesson.estimatedMinutes} minutes.
+          </Text>
           {lesson.vocabulary.map((item) => (
             <View
               className="mb-3 flex-row items-center rounded-[18px] border border-[#EEF1F7] bg-white px-4 py-4"

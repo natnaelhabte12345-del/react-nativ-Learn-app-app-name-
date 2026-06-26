@@ -7,6 +7,7 @@ import { useAuth } from "@clerk/expo";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { usePostHog } from "posthog-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -22,6 +23,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { images } from "@/constants/images";
 import { lessonsById } from "@/data/lessons";
+import { units } from "@/data/units";
+import { trackLessonAbandoned, trackLessonStarted } from "@/lib/analytics";
 import {
   createStreamAudioCall,
   startStreamAudioAgent,
@@ -29,6 +32,8 @@ import {
   type StreamAudioAgentSession,
   type StreamAudioCallSession,
 } from "@/lib/stream-audio";
+import { useProgressStore } from "@/store/progress-store";
+import type { Lesson } from "@/types/learning";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,6 +50,8 @@ type StreamVideoClientCtor = new (opts: {
 const AI_TEACHER_USER_ID = "duo-ai-teacher";
 const AGENT_OPENING_HEAD_START_MS = 900;
 const AGENT_JOIN_TIMEOUT_MS = 10_000;
+// Treat caption segments arriving within this window as one spoken turn.
+const LEARNER_TURN_DEBOUNCE_MS = 2500;
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -55,6 +62,9 @@ export default function AudioLessonScreen() {
     : params.lessonId;
   const lesson = lessonId ? lessonsById[lessonId] : null;
   const { getToken } = useAuth();
+  const posthog = usePostHog();
+  const completeLesson = useProgressStore((state) => state.completeLesson);
+  const recordActivity = useProgressStore((state) => state.recordActivity);
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [callPhase, setCallPhase] = useState<CallPhase>("idle");
@@ -63,7 +73,21 @@ export default function AudioLessonScreen() {
   const [isMicEnabled, setIsMicEnabled] = useState(false);
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
   const [recognizedSpeech, setRecognizedSpeech] = useState<string | null>(null);
-  const [practiceItemIndex, setPracticeItemIndex] = useState<number | null>(null);
+  // The number of times the learner has spoken. This is the single source of
+  // truth for progress: it drives the practice target, the "words said" counter,
+  // and lesson completion. Captions from the learner are reliable; matching the
+  // agent's speech against vocabulary keywords was not, so we no longer use it.
+  const [spokenTurns, setSpokenTurns] = useState(0);
+  const [lessonCompleted, setLessonCompleted] = useState(false);
+
+  // Award XP exactly once per session.
+  const hasAwardedXpRef = useRef(false);
+  // One spoken utterance can arrive as several caption segments; only count a
+  // new turn after a short gap so progress doesn't jump several words at once.
+  const lastLearnerTurnRef = useRef(0);
+  // Whether the agent ever reached "connected". The end-of-call XP fallback uses
+  // this so a learner who actually did the lesson always gets their reward.
+  const hasConnectedRef = useRef(false);
 
   // ── Refs ───────────────────────────────────────────────────────────────────
   const clientRef = useRef<StreamVideoClient | null>(null);
@@ -75,6 +99,17 @@ export default function AudioLessonScreen() {
   const isStartingRef = useRef(false);
   const hasStartedRef = useRef(false);
   const mountedRef = useRef(true);
+
+  // ── Analytics refs ───────────────────────────────────────────────────────
+  // Start time is captured on mount so the abandonment duration stays accurate
+  // no matter how often the screen re-renders. lastQuestionIndexRef tracks the
+  // latest practice item so the unmount cleanup reads a fresh value (not a
+  // stale closure). lessonCompletedRef guards against firing lesson_abandoned
+  // once a lesson_completed flow exists.
+  const lessonStartTimeRef = useRef(0);
+  const lastQuestionIndexRef = useRef(-1);
+  const lessonStartedRef = useRef(false);
+  const lessonCompletedRef = useRef(false);
 
   // ── Cleanup ────────────────────────────────────────────────────────────────
   const cleanup = useCallback(
@@ -115,7 +150,8 @@ export default function AudioLessonScreen() {
         setErrorMessage(null);
         setPermissionMessage(null);
         setRecognizedSpeech(null);
-        setPracticeItemIndex(null);
+        setSpokenTurns(0);
+        setLessonCompleted(false);
       }
     },
     [getToken],
@@ -136,13 +172,56 @@ export default function AudioLessonScreen() {
     };
   }, []);
 
+  // Keep the latest practice item index in a ref for the abandonment payload.
+  useEffect(() => {
+    if (!lesson || spokenTurns <= 0) return;
+    lastQuestionIndexRef.current = Math.min(
+      spokenTurns,
+      lesson.vocabulary.length - 1,
+    );
+  }, [lesson, spokenTurns]);
+
+  // lesson_started on mount, lesson_abandoned on unmount (unless completed).
+  // `lesson` is derived from the route param and stays referentially stable for
+  // the life of this screen, so a mount-once effect is safe here.
+  useEffect(() => {
+    if (!lesson) return;
+    lessonStartTimeRef.current = Date.now();
+    lessonStartedRef.current = true;
+    trackLessonStarted(posthog, {
+      lesson_id: lesson.id,
+      language: lesson.languageId,
+      lesson_number: getLessonNumber(lesson),
+    });
+
+    return () => {
+      // Intentionally read the refs' *latest* values at unmount time so we know
+      // whether the lesson was completed before the learner left.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      if (!lessonStartedRef.current || lessonCompletedRef.current) return;
+      trackLessonAbandoned(posthog, {
+        lesson_id: lesson.id,
+        time_into_lesson_seconds: Math.round(
+          (Date.now() - lessonStartTimeRef.current) / 1000,
+        ),
+        last_question_index: lastQuestionIndexRef.current,
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Start lesson ───────────────────────────────────────────────────────────
   const handleStartLesson = useCallback(async () => {
     if (!lesson || isStartingRef.current) return;
     isStartingRef.current = true;
+    hasAwardedXpRef.current = false;
+    lastLearnerTurnRef.current = 0;
+    hasConnectedRef.current = false;
     setCallPhase("creating");
     setAgentStatus("idle");
     setErrorMessage(null);
+    setLessonCompleted(false);
+    setSpokenTurns(0);
 
     try {
       const token = await getToken();
@@ -173,6 +252,7 @@ export default function AudioLessonScreen() {
         // Keep learner audio out of the realtime model until Duo has started.
         await call.microphone.disable().catch(() => undefined);
         await call.startClosedCaptions().catch(() => undefined);
+        const wordCount = lesson.vocabulary.length;
         captionUnsubRef.current = call.on("call.closed_caption", (event: any) => {
           if (!mountedRef.current) return;
           const cc = event?.closed_caption ?? event?.closedCaption;
@@ -181,18 +261,21 @@ export default function AudioLessonScreen() {
             .toLowerCase()
             .includes("duo");
 
-          if (isAgent) {
-            const spokenText = String(cc.text).toLocaleLowerCase();
-            const nextPracticeIndex = lesson.vocabulary.findIndex((item) =>
-              spokenText.includes(item.term.toLocaleLowerCase()),
-            );
-            if (nextPracticeIndex >= 0) {
-              setPracticeItemIndex(nextPracticeIndex);
-            }
-            return;
-          }
+          // We only track the learner's own speech. Duo's captions used to drive
+          // the practice target by keyword matching, but that was unreliable —
+          // it stuck on the first word and never reached completion.
+          if (isAgent) return;
 
           setRecognizedSpeech(String(cc.text));
+
+          // Count one practice attempt per utterance. A single utterance can fire
+          // several caption segments, so debounce: only advance after a short gap.
+          const now = Date.now();
+          if (now - lastLearnerTurnRef.current > LEARNER_TURN_DEBOUNCE_MS) {
+            lastLearnerTurnRef.current = now;
+            setSpokenTurns((turns) => Math.min(turns + 1, wordCount));
+          }
+
           // Keep the learner's latest STT result visible briefly, then return
           // to the stable practice prompt instead of showing stale dialogue.
           if (captionClearRef.current) clearTimeout(captionClearRef.current);
@@ -247,6 +330,7 @@ export default function AudioLessonScreen() {
         }
       }
 
+      hasConnectedRef.current = true;
       setAgentStatus("connected");
     } catch (error) {
       await cleanup({ resetState: false });
@@ -265,12 +349,49 @@ export default function AudioLessonScreen() {
     void handleStartLesson();
   }, [lesson, handleStartLesson]);
 
+  // Detect lesson completion: the learner has practiced every word in the
+  // lesson (one spoken turn per word). spokenTurns is capped at the word count,
+  // so this fires exactly when they reach the end.
+  useEffect(() => {
+    if (!lesson || lessonCompleted) return;
+    if (spokenTurns >= lesson.vocabulary.length) {
+      setLessonCompleted(true);
+    }
+  }, [lesson, lessonCompleted, spokenTurns]);
+
+  // Award XP + mark the lesson complete exactly once. completeLesson is a no-op
+  // for an already-completed lesson, so replaying it is safe, but the ref keeps
+  // streak/activity bookkeeping from firing repeatedly. lessonCompletedRef stops
+  // the unmount handler from logging a (false) lesson_abandoned event.
+  useEffect(() => {
+    if (!lesson || !lessonCompleted || hasAwardedXpRef.current) return;
+    hasAwardedXpRef.current = true;
+    lessonCompletedRef.current = true;
+    completeLesson(lesson.id, lesson.xpReward);
+    recordActivity();
+  }, [lesson, lessonCompleted, completeLesson, recordActivity]);
+
   // ── End call ───────────────────────────────────────────────────────────────
   const handleEndCall = useCallback(async () => {
+    // Safety net: if the learner clearly did the lesson (Duo connected and they
+    // spoke through most of the words) but auto-completion didn't fire, still
+    // grant the XP on the way out. Caption tracking can undercount, and the
+    // reward should never be lost once the work is genuinely done.
+    if (
+      lesson &&
+      !hasAwardedXpRef.current &&
+      hasConnectedRef.current &&
+      spokenTurns >= lesson.vocabulary.length - 1
+    ) {
+      hasAwardedXpRef.current = true;
+      lessonCompletedRef.current = true;
+      completeLesson(lesson.id, lesson.xpReward);
+      recordActivity();
+    }
     setCallPhase("ending");
     await cleanup({ resetState: false });
     router.back();
-  }, [cleanup]);
+  }, [cleanup, lesson, spokenTurns, completeLesson, recordActivity]);
 
   // ── Interrupt ──────────────────────────────────────────────────────────────
   // Mic is always on — the agent's VAD stops it when the user speaks naturally.
@@ -301,8 +422,19 @@ export default function AudioLessonScreen() {
     callPhase === "ending" ||
     (callPhase === "active" && agentStatus === "connecting");
   const micDisabled = callPhase !== "active" || !isMicEnabled;
-  const practiceItem =
-    practiceItemIndex === null ? null : lesson?.vocabulary[practiceItemIndex];
+  const wordCount = lesson?.vocabulary.length ?? 0;
+  // The word the learner should practice now: the first one until they speak,
+  // then the next after each spoken turn. Always a valid item.
+  const practiceTargetIndex =
+    wordCount === 0 ? 0 : Math.min(spokenTurns, wordCount - 1);
+  const practiceItem = lesson?.vocabulary[practiceTargetIndex] ?? null;
+  // How many words the learner has actually said so far.
+  const wordsSaid = Math.min(spokenTurns, wordCount);
+  const lessonStatusValue = lessonCompleted
+    ? "Complete"
+    : agentStatus === "connected"
+      ? "In progress"
+      : "Connecting";
 
   // ── Lesson not found ───────────────────────────────────────────────────────
   if (!lesson) {
@@ -395,6 +527,18 @@ export default function AudioLessonScreen() {
                   Use the Android development build for the full lesson.
                 </Text>
               </>
+            ) : lessonCompleted ? (
+              <>
+                <Text className="text-[11px] leading-[16px] font-poppins-semibold uppercase tracking-[1px] text-[#1FA45A]">
+                  Lesson complete
+                </Text>
+                <Text className="mt-1 text-[18px] leading-[25px] font-poppins-bold text-[#1B2340]">
+                  Great job! 🎉 +{lesson.xpReward} XP
+                </Text>
+                <Text className="mt-1 text-[12px] leading-[17px] font-poppins-regular text-[#69728A]">
+                  You can hang up now, or keep chatting with Duo to practice more.
+                </Text>
+              </>
             ) : recognizedSpeech ? (
               <>
                 <Text className="text-[11px] leading-[16px] font-poppins-semibold uppercase tracking-[1px] text-[#7D6BE8]">
@@ -467,9 +611,17 @@ export default function AudioLessonScreen() {
             value={isMicEnabled ? "Listening" : "Waiting"}
           />
           <View className="h-[34px] w-px bg-[#E9E9F0]" />
-          <StatItem color="#6484E8" label="Pronunciation" value="AI feedback" />
+          <StatItem
+            color="#6484E8"
+            label="Words said"
+            value={`${wordsSaid}/${lesson.vocabulary.length}`}
+          />
           <View className="h-[34px] w-px bg-[#E9E9F0]" />
-          <StatItem color="#6E55C9" label="Grammar" value="Live" />
+          <StatItem
+            color="#6E55C9"
+            label="Lesson"
+            value={lessonStatusValue}
+          />
         </View>
       </View>
     </View>
@@ -681,6 +833,15 @@ function delay(milliseconds: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, milliseconds);
   });
+}
+
+// 1-based position of the lesson within its unit, used as lesson_number.
+function getLessonNumber(lesson: Lesson): number {
+  const unit = units.find((item) => item.id === lesson.unitId);
+  const index = unit
+    ? unit.lessonIds.findIndex((id) => id === lesson.id)
+    : -1;
+  return index >= 0 ? index + 1 : 1;
 }
 
 function headerStatus(

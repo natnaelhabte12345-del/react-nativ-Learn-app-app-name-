@@ -1592,7 +1592,7 @@ function buildLesson(seed: LessonSeed): Lesson {
     description: seed.description,
     imageKey: seed.imageKey,
     xpReward: seed.xpReward ?? 10,
-    estimatedMinutes: seed.estimatedMinutes ?? 6,
+    estimatedMinutes: seed.estimatedMinutes ?? 3,
     goals: [
       {
         id: `${seed.id}-goal-main`,
