@@ -13,18 +13,23 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { AppLoadingScreen } from "@/components/ui/app-loading-screen";
+import { DailyRewardModal } from "@/components/rewards/daily-reward-modal";
 import { images } from "@/constants/images";
 import { defaultLanguageId, languages } from "@/data/languages";
 import { lessons } from "@/data/lessons";
 import { units } from "@/data/units";
 import { useLanguageStore } from "@/store/language-store";
-import { useProgressStore } from "@/store/progress-store";
+import {
+  DAILY_GOAL_XP,
+  DAILY_REWARD_BONUS_XP,
+  selectDailyRewardAvailable,
+  useProgressStore,
+} from "@/store/progress-store";
 import type { LanguageId, Lesson } from "@/types/learning";
 
-const DAILY_GOAL_XP = 20;
 const CONTENT_MAX_WIDTH = 420;
 
 const flagImages: Record<LanguageId, ImageSourcePropType> = {
@@ -55,6 +60,9 @@ export function HomeScreen() {
   const streak = useProgressStore((state) => state.streak);
   const dailyXp = useProgressStore((state) => state.dailyXp);
   const recordActivity = useProgressStore((state) => state.recordActivity);
+  const rewardAvailable = useProgressStore(selectDailyRewardAvailable);
+  const claimDailyReward = useProgressStore((state) => state.claimDailyReward);
+  const [rewardVisible, setRewardVisible] = useState(false);
 
   // Record that the user opened the app today — updates streak if it's a new day.
   // Gated on progress-store hydration so we don't overwrite the persisted streak
@@ -63,6 +71,19 @@ export function HomeScreen() {
     if (!progressHydrated) return;
     recordActivity();
   }, [progressHydrated, recordActivity]);
+
+  // Pop the daily-goal reward chest once the learner crosses the goal. The store
+  // selector already limits this to one unclaimed reward per day.
+  useEffect(() => {
+    if (progressHydrated && rewardAvailable) {
+      setRewardVisible(true);
+    }
+  }, [progressHydrated, rewardAvailable]);
+
+  const handleClaimReward = () => {
+    claimDailyReward();
+    setRewardVisible(false);
+  };
 
   if (!isLoaded || !hasHydrated) {
     return <AppLoadingScreen message="Loading your dashboard..." />;
@@ -180,6 +201,12 @@ export function HomeScreen() {
           />
         </View>
       </ScrollView>
+
+      <DailyRewardModal
+        bonusXp={DAILY_REWARD_BONUS_XP}
+        onClaim={handleClaimReward}
+        visible={rewardVisible}
+      />
     </SafeAreaView>
   );
 }
