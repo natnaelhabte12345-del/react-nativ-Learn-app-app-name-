@@ -168,7 +168,15 @@ def _lesson_plan(lesson: dict[str, Any]) -> str:
 
 
 def _call_custom(payload: Any) -> dict[str, Any]:
-    data = _as_dict(payload)
+    # getstream 3.x returns StreamResponse[GetCallResponse], where both
+    # GetCallResponse and its nested CallResponse are dataclasses.
+    response_data = getattr(payload, "data", payload)
+    call_response = getattr(response_data, "call", None)
+    custom = getattr(call_response, "custom", None)
+    if isinstance(custom, dict):
+        return custom
+
+    data = _as_dict(response_data)
     call_data = _as_dict(data.get("call", data))
     custom = call_data.get("custom")
     return custom if isinstance(custom, dict) else {}
@@ -180,7 +188,7 @@ async def _load_call_custom(call: Any) -> dict[str, Any]:
     except Exception:
         return {}
 
-    return _call_custom(getattr(response, "data", response))
+    return _call_custom(response)
 
 
 def _pedagogy_from_custom(custom: dict[str, Any]) -> dict[str, Any]:

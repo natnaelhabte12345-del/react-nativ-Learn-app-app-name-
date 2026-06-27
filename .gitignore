@@ -44,3 +44,6 @@ app-example
 /ios
 /android
 .claude/settings.local.json
+
+# local debug dumps / scratch artifacts
+tmp/
