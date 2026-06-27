@@ -2,6 +2,7 @@ import type {
   LanguageId,
   Lesson,
   LessonImageKey,
+  LessonPedagogy,
   PhraseItem,
   VocabularyItem,
 } from "@/types/learning";
@@ -1565,6 +1566,254 @@ const lessonSeeds: LessonSeed[] = [
   },
 ];
 
+// ─── 5-phase pedagogy (Spanish track) ──────────────────────────────────────
+// The evidence-based redesign: each lesson teaches 5–6 usable chunks through a
+// situation hook, a modeled dialogue, guided retrieval (with scaffolds that
+// fade across the unit), embedded review of earlier chunks, and a free-task
+// roleplay. Other languages still use the legacy 3-word format until migrated.
+const lessonPedagogyById: Record<string, LessonPedagogy> = {
+  "spanish-greetings": {
+    cefrLevel: "A1",
+    canDo: "Greet someone, introduce yourself, and ask where they are from.",
+    situationHook:
+      "You're at a language exchange in Madrid. Someone friendly walks up and smiles at you.",
+    dialogue: [
+      { speaker: "a", text: "¡Hola! Buenas. Me llamo Sofía.", translation: "Hi! Hello. My name is Sofía." },
+      { speaker: "b", text: "Hola, Sofía. Me llamo Alex. Mucho gusto.", translation: "Hi, Sofía. My name is Alex. Nice to meet you." },
+      { speaker: "a", text: "Mucho gusto. ¿De dónde eres?", translation: "Nice to meet you. Where are you from?" },
+      { speaker: "b", text: "Soy de Canadá. ¿Y tú?", translation: "I'm from Canada. And you?" },
+      { speaker: "a", text: "Soy de España. ¡Bienvenido!", translation: "I'm from Spain. Welcome!" },
+    ],
+    targetChunks: [
+      { id: "es-greet-1", text: "Hola, buenas", translation: "Hi, hello", pronunciation: "oh-lah bweh-nas" },
+      { id: "es-greet-2", text: "me llamo…", translation: "my name is…", pronunciation: "meh yah-moh" },
+      { id: "es-greet-3", text: "mucho gusto", translation: "nice to meet you", pronunciation: "moo-choh goos-toh" },
+      { id: "es-greet-4", text: "¿de dónde eres?", translation: "where are you from?", pronunciation: "deh dohn-deh eh-res" },
+      { id: "es-greet-5", text: "soy de…", translation: "I'm from…", pronunciation: "soy deh" },
+      { id: "es-greet-6", text: "¿y tú?", translation: "and you?", pronunciation: "ee too" },
+    ],
+    guidedRetrieval: [
+      { id: "es-greet-r1", cue: "Someone greets you casually. Greet them back.", expected: "Hola, buenas", scaffold: "Hola…" },
+      { id: "es-greet-r2", cue: "Tell them your name.", expected: "Me llamo Alex", scaffold: "Me llamo…" },
+      { id: "es-greet-r3", cue: "Say it's nice to meet them.", expected: "Mucho gusto" },
+      { id: "es-greet-r4", cue: "Ask where they're from.", expected: "¿De dónde eres?" },
+      { id: "es-greet-r5", cue: "Say where you're from, then ask the same back.", expected: "Soy de Canadá. ¿Y tú?" },
+    ],
+    reviewChunks: [],
+    freeTask: {
+      goal: "Meet someone new: greet them, exchange names, and find out where they're from.",
+      twist: "They ask you a question first — react naturally.",
+      successCriteria: [
+        "Greeted and gave your name",
+        "Said 'mucho gusto'",
+        "Asked or answered where you're from",
+      ],
+    },
+  },
+  "spanish-daily-life": {
+    cefrLevel: "A1",
+    canDo: "Say what you're doing today, where you're going, and how you feel.",
+    situationHook:
+      "You bump into a Spanish neighbor in the morning. They ask what you're up to today.",
+    dialogue: [
+      { speaker: "a", text: "¡Buenos días! ¿Qué haces hoy?", translation: "Good morning! What are you doing today?" },
+      { speaker: "b", text: "Hoy trabajo, y luego voy a casa.", translation: "Today I work, and then I go home." },
+      { speaker: "a", text: "¿Trabajas mucho?", translation: "Do you work a lot?" },
+      { speaker: "b", text: "Un poco. Hoy estoy cansado.", translation: "A little. Today I'm tired." },
+      { speaker: "a", text: "¡Descansa! Hasta luego.", translation: "Rest! See you later." },
+    ],
+    targetChunks: [
+      { id: "es-daily-1", text: "buenos días", translation: "good morning", pronunciation: "bweh-nos dee-as" },
+      { id: "es-daily-2", text: "¿qué haces hoy?", translation: "what are you doing today?", pronunciation: "keh ah-thes oy" },
+      { id: "es-daily-3", text: "hoy trabajo", translation: "today I work", pronunciation: "oy trah-bah-hoh" },
+      { id: "es-daily-4", text: "voy a casa", translation: "I'm going home", pronunciation: "voy ah kah-sah" },
+      { id: "es-daily-5", text: "estoy cansado", translation: "I'm tired", pronunciation: "es-toy kan-sah-doh" },
+      { id: "es-daily-6", text: "hasta luego", translation: "see you later", pronunciation: "ahs-tah lweh-goh" },
+    ],
+    guidedRetrieval: [
+      { id: "es-daily-r1", cue: "Greet your neighbor in the morning.", expected: "Buenos días", scaffold: "Buenos…" },
+      { id: "es-daily-r2", cue: "Say what you're doing: today I work, then I go home.", expected: "Hoy trabajo y voy a casa" },
+      { id: "es-daily-r3", cue: "Tell them you're tired.", expected: "Estoy cansado" },
+      { id: "es-daily-r4", cue: "Ask them what they're doing today.", expected: "¿Qué haces hoy?" },
+      { id: "es-daily-r5", cue: "Say goodbye casually.", expected: "Hasta luego" },
+    ],
+    reviewChunks: [
+      { id: "es-greet-1", text: "Hola, buenas", translation: "Hi, hello", pronunciation: "oh-lah bweh-nas" },
+      { id: "es-greet-4", text: "¿de dónde eres?", translation: "where are you from?", pronunciation: "deh dohn-deh eh-res" },
+    ],
+    freeTask: {
+      goal: "Run into a neighbor: greet them, say what you're doing today, and say goodbye.",
+      twist: "They ask if you work a lot — answer them.",
+      successCriteria: [
+        "Greeted for the morning",
+        "Said something about today using 'hoy'",
+        "Closed with a goodbye",
+      ],
+    },
+  },
+  "spanish-cafe-order": {
+    cefrLevel: "A1",
+    canDo: "Order drinks the way locals do and respond to the waiter.",
+    situationHook:
+      "You sit down at a sunny café in Madrid. The waiter comes over with a smile.",
+    dialogue: [
+      { speaker: "a", text: "¡Hola! ¿Qué va a tomar?", translation: "Hi! What will you have?" },
+      { speaker: "b", text: "Me pone un café con leche, por favor.", translation: "Can I have a coffee with milk, please." },
+      { speaker: "a", text: "¿Algo más?", translation: "Anything else?" },
+      { speaker: "b", text: "Sí, un agua también, por favor.", translation: "Yes, a water too, please." },
+      { speaker: "a", text: "Marchando.", translation: "Coming right up." },
+    ],
+    targetChunks: [
+      { id: "es-cafe-1", text: "¿qué va a tomar?", translation: "what will you have?", pronunciation: "keh vah ah toh-mar" },
+      { id: "es-cafe-2", text: "me pone un café con leche", translation: "can I have a coffee with milk", pronunciation: "meh poh-neh oon kah-feh kon leh-cheh" },
+      { id: "es-cafe-3", text: "por favor", translation: "please", pronunciation: "por fah-vor" },
+      { id: "es-cafe-4", text: "¿algo más?", translation: "anything else?", pronunciation: "ahl-goh mas" },
+      { id: "es-cafe-5", text: "un agua también", translation: "a water too", pronunciation: "oon ah-gwah tam-byen" },
+      { id: "es-cafe-6", text: "para llevar", translation: "to go / takeaway", pronunciation: "pah-rah yeh-var" },
+    ],
+    guidedRetrieval: [
+      { id: "es-cafe-r1", cue: "Order a coffee with milk the local way (not 'quiero').", expected: "Me pone un café con leche, por favor", scaffold: "Me pone…" },
+      { id: "es-cafe-r2", cue: "The waiter asks 'anything else?'. What did he say?", expected: "¿Algo más?" },
+      { id: "es-cafe-r3", cue: "Add a water too.", expected: "Un agua también, por favor" },
+      { id: "es-cafe-r4", cue: "Say you want it to go.", expected: "Para llevar, por favor" },
+    ],
+    reviewChunks: [
+      { id: "es-greet-1", text: "Hola, buenas", translation: "Hi, hello", pronunciation: "oh-lah bweh-nas" },
+      { id: "es-daily-1", text: "buenos días", translation: "good morning", pronunciation: "bweh-nos dee-as" },
+    ],
+    freeTask: {
+      goal: "Order at the café: a coffee with milk and a water, and decide if it's to stay or to go.",
+      twist: "They're out of milk and offer it black — react and adapt.",
+      successCriteria: [
+        "Used 'me pone' (not 'quiero')",
+        "Ordered two things",
+        "Handled the missing-milk twist",
+      ],
+    },
+  },
+  "spanish-travel-directions": {
+    cefrLevel: "A1",
+    canDo: "Ask where a place is and understand left, right, and straight.",
+    situationHook:
+      "You're lost in Barcelona and need the train station. You stop a friendly local.",
+    dialogue: [
+      { speaker: "b", text: "Perdona, ¿dónde está la estación?", translation: "Excuse me, where is the station?" },
+      { speaker: "a", text: "Sigue todo recto y luego a la derecha.", translation: "Go straight and then to the right." },
+      { speaker: "b", text: "¿Está lejos?", translation: "Is it far?" },
+      { speaker: "a", text: "No, está cerca. Cinco minutos.", translation: "No, it's close. Five minutes." },
+      { speaker: "b", text: "¡Gracias!", translation: "Thanks!" },
+    ],
+    targetChunks: [
+      { id: "es-travel-1", text: "perdona", translation: "excuse me", pronunciation: "per-doh-nah" },
+      { id: "es-travel-2", text: "¿dónde está la estación?", translation: "where is the station?", pronunciation: "dohn-deh es-tah lah es-tah-thyon" },
+      { id: "es-travel-3", text: "todo recto", translation: "straight ahead", pronunciation: "toh-doh rek-toh" },
+      { id: "es-travel-4", text: "a la derecha / a la izquierda", translation: "to the right / to the left", pronunciation: "ah lah deh-reh-chah / ees-kyer-dah" },
+      { id: "es-travel-5", text: "¿está lejos?", translation: "is it far?", pronunciation: "es-tah leh-hos" },
+      { id: "es-travel-6", text: "está cerca", translation: "it's close", pronunciation: "es-tah ther-kah" },
+    ],
+    guidedRetrieval: [
+      { id: "es-travel-r1", cue: "Get someone's attention politely.", expected: "Perdona" },
+      { id: "es-travel-r2", cue: "Ask where the station is.", expected: "¿Dónde está la estación?", scaffold: "¿Dónde está…?" },
+      { id: "es-travel-r3", cue: "Ask if it's far.", expected: "¿Está lejos?" },
+      { id: "es-travel-r4", cue: "They said straight then right. Repeat the directions.", expected: "Todo recto y a la derecha" },
+    ],
+    reviewChunks: [
+      { id: "es-cafe-3", text: "por favor", translation: "please", pronunciation: "por fah-vor" },
+      { id: "es-daily-4", text: "voy a casa", translation: "I'm going home", pronunciation: "voy ah kah-sah" },
+    ],
+    freeTask: {
+      goal: "You're lost: stop someone, ask where the station is, and find out if it's far.",
+      twist: "They give directions quickly — ask them to repeat or confirm.",
+      successCriteria: [
+        "Opened with 'perdona'",
+        "Asked where the station is",
+        "Confirmed the directions",
+      ],
+    },
+  },
+  "spanish-shopping": {
+    cefrLevel: "A1",
+    canDo: "Ask the price, ask for a color, and pay at a shop.",
+    situationHook:
+      "You're at a market in Seville and you spotted a shirt you like.",
+    dialogue: [
+      { speaker: "b", text: "Hola, ¿cuánto cuesta esta camisa?", translation: "Hi, how much is this shirt?" },
+      { speaker: "a", text: "Quince euros.", translation: "Fifteen euros." },
+      { speaker: "b", text: "¿La tiene en azul?", translation: "Do you have it in blue?" },
+      { speaker: "a", text: "Sí, aquí tiene.", translation: "Yes, here you go." },
+      { speaker: "b", text: "Me la llevo. ¿Puedo pagar con tarjeta?", translation: "I'll take it. Can I pay by card?" },
+    ],
+    targetChunks: [
+      { id: "es-shop-1", text: "¿cuánto cuesta?", translation: "how much is it?", pronunciation: "kwan-toh kwes-tah" },
+      { id: "es-shop-2", text: "esta camisa", translation: "this shirt", pronunciation: "es-tah kah-mee-sah" },
+      { id: "es-shop-3", text: "¿la tiene en azul?", translation: "do you have it in blue?", pronunciation: "lah tyeh-neh en ah-thool" },
+      { id: "es-shop-4", text: "me la llevo", translation: "I'll take it", pronunciation: "meh lah yeh-voh" },
+      { id: "es-shop-5", text: "¿puedo pagar con tarjeta?", translation: "can I pay by card?", pronunciation: "pweh-doh pah-gar kon tar-heh-tah" },
+      { id: "es-shop-6", text: "es demasiado caro", translation: "it's too expensive", pronunciation: "es deh-mah-syah-doh kah-roh" },
+    ],
+    guidedRetrieval: [
+      { id: "es-shop-r1", cue: "Ask how much the shirt costs.", expected: "¿Cuánto cuesta esta camisa?", scaffold: "¿Cuánto cuesta…?" },
+      { id: "es-shop-r2", cue: "Ask if they have it in blue.", expected: "¿La tiene en azul?" },
+      { id: "es-shop-r3", cue: "Say you'll take it.", expected: "Me la llevo" },
+      { id: "es-shop-r4", cue: "Ask if you can pay by card.", expected: "¿Puedo pagar con tarjeta?" },
+      { id: "es-shop-r5", cue: "Say it's too expensive.", expected: "Es demasiado caro" },
+    ],
+    reviewChunks: [
+      { id: "es-greet-1", text: "Hola, buenas", translation: "Hi, hello", pronunciation: "oh-lah bweh-nas" },
+      { id: "es-cafe-3", text: "por favor", translation: "please", pronunciation: "por fah-vor" },
+    ],
+    freeTask: {
+      goal: "At the market: ask the price of something, ask for a different color, and pay.",
+      twist: "It's a bit pricey — react, or ask for something cheaper.",
+      successCriteria: [
+        "Asked the price",
+        "Asked about a color",
+        "Decided and paid, or declined politely",
+      ],
+    },
+  },
+  "spanish-family-friends": {
+    cefrLevel: "A1",
+    canDo: "Introduce people you know and say a little about them.",
+    situationHook:
+      "You're showing a Spanish friend some photos on your phone.",
+    dialogue: [
+      { speaker: "a", text: "¿Quién es?", translation: "Who is that?" },
+      { speaker: "b", text: "Es mi amigo, Marco. Es muy simpático.", translation: "He's my friend, Marco. He's very nice." },
+      { speaker: "a", text: "¿Y ella?", translation: "And her?" },
+      { speaker: "b", text: "Es mi hermana. Se llama Lucía.", translation: "She's my sister. Her name is Lucía." },
+      { speaker: "a", text: "¡Qué bien!", translation: "How nice!" },
+    ],
+    targetChunks: [
+      { id: "es-fam-1", text: "¿quién es?", translation: "who is that?", pronunciation: "kyen es" },
+      { id: "es-fam-2", text: "es mi amigo / amiga", translation: "he/she is my friend", pronunciation: "es mee ah-mee-goh / ah-mee-gah" },
+      { id: "es-fam-3", text: "es mi hermana", translation: "she's my sister", pronunciation: "es mee er-mah-nah" },
+      { id: "es-fam-4", text: "se llama…", translation: "his/her name is…", pronunciation: "seh yah-mah" },
+      { id: "es-fam-5", text: "es muy simpático", translation: "he's very nice", pronunciation: "es mwee seem-pah-tee-koh" },
+      { id: "es-fam-6", text: "¿y ella? / ¿y él?", translation: "and her? / and him?", pronunciation: "ee eh-yah / ee el" },
+    ],
+    guidedRetrieval: [
+      { id: "es-fam-r1", cue: "Your friend points at a photo and asks who it is. What did they ask?", expected: "¿Quién es?" },
+      { id: "es-fam-r2", cue: "Say it's your friend and he's very nice.", expected: "Es mi amigo, es muy simpático" },
+      { id: "es-fam-r3", cue: "Introduce your sister and say her name.", expected: "Es mi hermana, se llama Lucía" },
+      { id: "es-fam-r4", cue: "Ask 'and her?'", expected: "¿Y ella?" },
+    ],
+    reviewChunks: [
+      { id: "es-greet-2", text: "me llamo…", translation: "my name is…", pronunciation: "meh yah-moh" },
+      { id: "es-greet-3", text: "mucho gusto", translation: "nice to meet you", pronunciation: "moo-choh goos-toh" },
+    ],
+    freeTask: {
+      goal: "Show a photo: introduce two people you know and say one thing about each.",
+      twist: "Your friend asks a follow-up question about one of them.",
+      successCriteria: [
+        "Introduced someone with 'es mi…'",
+        "Used 'se llama' for a name",
+        "Described someone with 'es muy…'",
+      ],
+    },
+  },
+};
+
 export const lessons = lessonSeeds.map(buildLesson) satisfies Lesson[];
 
 export const lessonsById = Object.fromEntries(
@@ -1583,16 +1832,30 @@ function buildLesson(seed: LessonSeed): Lesson {
   const mainVocabulary = seed.vocabulary[0];
   const mainPhrase = seed.phrases[0];
   const languageName = languageNames[seed.languageId];
+  const pedagogy = lessonPedagogyById[seed.id];
+
+  // For migrated (5-phase) lessons, the practiced items ARE the chunks — so the
+  // audio screen practices all of them and screens display the real phrases.
+  // Legacy lessons keep their original 3-word vocabulary.
+  const vocabulary: VocabularyItem[] = pedagogy
+    ? pedagogy.targetChunks.map((chunk) => ({
+        id: chunk.id,
+        term: chunk.text,
+        translation: chunk.translation,
+        pronunciation: chunk.pronunciation ?? "",
+      }))
+    : seed.vocabulary;
 
   return {
     id: seed.id,
     unitId: seed.unitId,
     languageId: seed.languageId,
     title: seed.title,
-    description: seed.description,
+    description: pedagogy?.canDo ?? seed.description,
     imageKey: seed.imageKey,
     xpReward: seed.xpReward ?? 10,
-    estimatedMinutes: seed.estimatedMinutes ?? 3,
+    estimatedMinutes: seed.estimatedMinutes ?? (pedagogy ? 12 : 3),
+    ...(pedagogy ? { pedagogy } : {}),
     goals: [
       {
         id: `${seed.id}-goal-main`,
@@ -1605,7 +1868,7 @@ function buildLesson(seed: LessonSeed): Lesson {
         description: `Practice: ${mainPhrase.text}`,
       },
     ],
-    vocabulary: seed.vocabulary,
+    vocabulary,
     phrases: seed.phrases,
     activities: [
       {

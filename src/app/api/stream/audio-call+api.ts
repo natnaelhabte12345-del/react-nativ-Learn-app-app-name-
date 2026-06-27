@@ -126,6 +126,8 @@ export async function POST(request: Request) {
       vocabulary: lesson.vocabulary,
       phrases: lesson.phrases,
       aiTeacherPrompt: lesson.aiTeacherPrompt,
+      // Present on migrated lessons — drives the 5-phase teaching script.
+      pedagogy: lesson.pedagogy,
     };
     const callResponse = await streamRequest<StreamGetOrCreateCallResponse>({
       apiKey: env.streamApiKey,
