@@ -197,7 +197,6 @@ export default function AudioLessonScreen() {
     return () => {
       // Intentionally read the refs' *latest* values at unmount time so we know
       // whether the lesson was completed before the learner left.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
       if (!lessonStartedRef.current || lessonCompletedRef.current) return;
       trackLessonAbandoned(posthog, {
         lesson_id: lesson.id,
@@ -367,8 +366,9 @@ export default function AudioLessonScreen() {
     if (!lesson || !lessonCompleted || hasAwardedXpRef.current) return;
     hasAwardedXpRef.current = true;
     lessonCompletedRef.current = true;
-    completeLesson(lesson.id, lesson.xpReward);
+    // recordActivity first so daily-XP resets before completeLesson adds the reward.
     recordActivity();
+    completeLesson(lesson.id, lesson.xpReward);
   }, [lesson, lessonCompleted, completeLesson, recordActivity]);
 
   // ── End call ───────────────────────────────────────────────────────────────
@@ -385,8 +385,9 @@ export default function AudioLessonScreen() {
     ) {
       hasAwardedXpRef.current = true;
       lessonCompletedRef.current = true;
-      completeLesson(lesson.id, lesson.xpReward);
+      // recordActivity first so daily-XP resets before completeLesson adds the reward.
       recordActivity();
+      completeLesson(lesson.id, lesson.xpReward);
     }
     setCallPhase("ending");
     await cleanup({ resetState: false });

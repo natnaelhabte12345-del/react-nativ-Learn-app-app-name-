@@ -1,5 +1,5 @@
-import { TabPlaceholderScreen } from "@/components/navigation/tab-placeholder-screen";
+import { AiTeacherScreen } from "@/components/ai-teacher/ai-teacher-screen";
 
 export default function AiTeacherTabScreen() {
-  return <TabPlaceholderScreen title="AI Teacher" />;
+  return <AiTeacherScreen />;
 }
