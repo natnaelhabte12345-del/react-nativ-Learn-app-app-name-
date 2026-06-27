@@ -1,6 +1,7 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useUser } from "@clerk/expo";
+import { router } from "expo-router";
 import {
   Image,
   type ImageSourcePropType,
@@ -94,7 +95,7 @@ export function HomeScreen() {
     user?.primaryEmailAddress?.emailAddress.split("@")[0] ??
     "Alex";
   const contentWidth = Math.min(Math.max(width - 30, 0), CONTENT_MAX_WIDTH);
-  const unitLabel = `A1 \u00B7 Unit ${Math.max((currentUnit?.order ?? 2) + 1, 3)}`;
+  const unitLabel = `A1 · Unit ${Math.max((currentUnit?.order ?? 2) + 1, 3)}`;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -107,7 +108,12 @@ export function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View className="h-[48px] flex-row items-center justify-between">
-          <View className="flex-row items-center">
+          {/* Tapping the flag + greeting opens language selection */}
+          <TouchableOpacity
+            activeOpacity={0.75}
+            className="flex-row items-center"
+            onPress={() => router.push("/language-selection")}
+          >
             <View className="h-[36px] w-[36px] overflow-hidden rounded-full bg-white">
               <Image
                 className="h-full w-full"
@@ -121,16 +127,13 @@ export function HomeScreen() {
             >
               {greetings[selectedLanguage.id]}, {displayName}! {"\u{1F44B}"}
             </Text>
-          </View>
+          </TouchableOpacity>
 
           <View className="flex-row items-center">
             <Text className="text-[25px] leading-[29px]">{"\u{1F525}"}</Text>
             <Text className="ml-2 text-[17px] leading-[23px] font-poppins-semibold text-[#39415f]">
               {streak}
             </Text>
-            <View className="ml-5 h-[34px] w-[30px] items-center justify-center">
-              <Ionicons color="#111936" name="notifications-outline" size={25} />
-            </View>
           </View>
         </View>
 
@@ -138,6 +141,7 @@ export function HomeScreen() {
 
         <ContinueLearningCard
           languageName={selectedLanguage.name}
+          onPress={() => router.navigate("/(tabs)/learn")}
           unitLabel={unitLabel}
         />
 
@@ -145,7 +149,10 @@ export function HomeScreen() {
           <Text className="text-[19px] leading-[25px] font-poppins-semibold text-text-primary">
             {"Today's plan"}
           </Text>
-          <TouchableOpacity activeOpacity={0.75}>
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={() => router.navigate("/(tabs)/learn")}
+          >
             <Text className="text-[19px] leading-[25px] font-poppins-semibold text-lingua-deep-purple">
               View all
             </Text>
@@ -157,20 +164,21 @@ export function HomeScreen() {
             iconType="book"
             title="Lesson"
             subtitle={getLessonPlanSubtitle(currentLesson)}
+            onPress={() => router.navigate("/(tabs)/learn")}
           />
           <PlanItem
             iconType="headphones"
             title="AI Conversation"
             subtitle="Talk about your day"
+            onPress={() => router.navigate("/(tabs)/ai-teacher")}
           />
           <PlanItem
             iconType="chat"
-            title="New words"
-            subtitle="10 words"
+            title="Chat with Duo"
+            subtitle="Practice through conversation"
+            onPress={() => router.navigate("/(tabs)/chat")}
           />
         </View>
-
-        <NextUpCard />
       </ScrollView>
     </SafeAreaView>
   );
@@ -218,11 +226,13 @@ function DailyGoalCard({ earnedXp, progress }: DailyGoalCardProps) {
 
 type ContinueLearningCardProps = {
   languageName: string;
+  onPress: () => void;
   unitLabel: string;
 };
 
 function ContinueLearningCard({
   languageName,
+  onPress,
   unitLabel,
 }: ContinueLearningCardProps) {
   return (
@@ -258,6 +268,7 @@ function ContinueLearningCard({
       <TouchableOpacity
         activeOpacity={0.85}
         className="mt-5 h-[42px] w-[106px] items-center justify-center rounded-[14px] bg-white"
+        onPress={onPress}
         style={styles.continueButtonShadow}
       >
         <Text className="text-[16px] leading-[22px] font-poppins-semibold text-lingua-deep-purple">
@@ -271,6 +282,7 @@ function ContinueLearningCard({
 type PlanItemProps = {
   completed?: boolean;
   iconType: "book" | "chat" | "headphones";
+  onPress?: () => void;
   subtitle: string;
   title: string;
 };
@@ -278,13 +290,19 @@ type PlanItemProps = {
 function PlanItem({
   completed = false,
   iconType,
+  onPress,
   subtitle,
   title,
 }: PlanItemProps) {
   const isChat = iconType === "chat";
 
   return (
-    <View className="h-[54px] flex-row items-center">
+    <TouchableOpacity
+      activeOpacity={onPress ? 0.75 : 1}
+      className="h-[54px] flex-row items-center"
+      disabled={!onPress}
+      onPress={onPress}
+    >
       <View
         className={
           isChat
@@ -317,52 +335,11 @@ function PlanItem({
       >
         {completed ? (
           <Text className="text-[15px] leading-[18px] font-poppins-semibold text-white">
-            {"\u2713"}
+            {"✓"}
           </Text>
         ) : null}
       </View>
-    </View>
-  );
-}
-
-function NextUpCard() {
-  return (
-    <View
-      className="relative mt-[10px] h-[100px] overflow-hidden rounded-[18px] bg-[#f4fced] px-5"
-      style={styles.softCardShadow}
-    >
-      <View className="h-full justify-center">
-        <Text className="text-[15px] leading-[20px] font-poppins-medium text-[#737b96]">
-          Next up
-        </Text>
-        <Text className="mt-1 text-[19px] leading-[25px] font-poppins-semibold text-text-primary">
-          AI Video Call
-        </Text>
-        <Text className="mt-[2px] text-[13px] leading-[18px] font-poppins-regular text-[#65708d]">
-          Practice speaking
-        </Text>
-      </View>
-
-      {/* Soft halo behind the portrait */}
-      <View
-        className="absolute rounded-full bg-[#e6f4d8]"
-        style={{ right: 72, top: 10, width: 80, height: 80 }}
-      />
-      <Image
-        className="absolute rounded-full"
-        resizeMode="cover"
-        source={images.teacherPortrait}
-        style={{ right: 76, top: 13, width: 74, height: 74 }}
-      />
-
-      <TouchableOpacity
-        activeOpacity={0.82}
-        className="absolute items-center justify-center rounded-full bg-[#55c71e]"
-        style={{ right: 16, top: 25, width: 50, height: 50 }}
-      >
-        <Ionicons color="#FFFFFF" name="videocam" size={24} />
-      </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -374,7 +351,7 @@ function getLessonPlanSubtitle(lesson: Lesson | null) {
   const unitTitle = units.find((unit) => unit.id === lesson.unitId)?.title;
 
   if (unitTitle?.toLowerCase().includes("cafe")) {
-    return "At the caf\u00E9";
+    return "At the café";
   }
 
   return lesson.title;

@@ -1,5 +1,5 @@
-import { TabPlaceholderScreen } from "@/components/navigation/tab-placeholder-screen";
+import { ChatScreen } from "@/components/chat/chat-screen";
 
 export default function ChatTabScreen() {
-  return <TabPlaceholderScreen title="Chat" />;
+  return <ChatScreen />;
 }
