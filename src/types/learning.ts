@@ -99,6 +99,56 @@ export type AITeacherPrompt = {
   targetPhrases: string[];
 };
 
+export type CEFRLevel = "A1" | "A2" | "B1" | "B2";
+
+// A "chunk" is the real unit of fluency: a short usable phrase/collocation,
+// not an isolated word (e.g. "me pone un café" rather than just "café").
+export type Chunk = {
+  id: string;
+  text: string;
+  translation: string;
+  pronunciation?: string;
+};
+
+// A line in the modeled-input dialogue the learner hears before producing.
+export type DialogueLine = {
+  speaker: "a" | "b";
+  text: string;
+  translation: string;
+};
+
+// A guided-retrieval prompt: an English cue, the expected target-language
+// answer, and an optional sentence-starter scaffold (faded out in later lessons).
+export type RetrievalPrompt = {
+  id: string;
+  cue: string;
+  expected: string;
+  scaffold?: string;
+};
+
+// The free-production roleplay that closes each lesson.
+export type FreeTask = {
+  goal: string;
+  twist?: string;
+  successCriteria: string[];
+};
+
+// The evidence-based 5-phase lesson: situation hook -> modeled input ->
+// guided retrieval (with recasting) -> embedded review -> free task.
+// Optional on Lesson so existing lessons remain valid while content is migrated.
+export type LessonPedagogy = {
+  cefrLevel: CEFRLevel;
+  canDo: string;
+  situationHook: string;
+  dialogue: DialogueLine[];
+  targetChunks: Chunk[];
+  guidedRetrieval: RetrievalPrompt[];
+  // Chunks from earlier lessons to resurface naturally (spaced retrieval).
+  // Denormalized so the AI agent receives them without extra lookups.
+  reviewChunks: Chunk[];
+  freeTask: FreeTask;
+};
+
 export type Lesson = {
   id: LessonId;
   unitId: UnitId;
@@ -113,4 +163,6 @@ export type Lesson = {
   phrases: PhraseItem[];
   activities: LessonActivity[];
   aiTeacherPrompt: AITeacherPrompt;
+  // Present on lessons migrated to the 5-phase model; absent on legacy lessons.
+  pedagogy?: LessonPedagogy;
 };

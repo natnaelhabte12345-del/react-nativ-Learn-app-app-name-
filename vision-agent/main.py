@@ -183,7 +183,200 @@ async def _load_call_custom(call: Any) -> dict[str, Any]:
     return _call_custom(getattr(response, "data", response))
 
 
+def _pedagogy_from_custom(custom: dict[str, Any]) -> dict[str, Any]:
+    lesson = _as_dict(custom.get("lesson"))
+    return _as_dict(custom.get("pedagogy") or lesson.get("pedagogy"))
+
+
+def _format_chunk_list(chunks: Any) -> str:
+    lines: list[str] = []
+    if isinstance(chunks, list):
+        for item in chunks:
+            data = _as_dict(item)
+            text = data.get("text")
+            translation = data.get("translation")
+            if not (isinstance(text, str) and isinstance(translation, str)):
+                continue
+            pron = data.get("pronunciation")
+            pron_str = (
+                f" [{pron.strip()}]"
+                if isinstance(pron, str) and pron.strip()
+                else ""
+            )
+            lines.append(f'- "{text}"{pron_str} — {translation}')
+    return "\n".join(lines)
+
+
+def _format_dialogue(dialogue: Any) -> str:
+    out: list[str] = []
+    if isinstance(dialogue, list):
+        for line in dialogue:
+            data = _as_dict(line)
+            text = data.get("text")
+            translation = data.get("translation")
+            if not (isinstance(text, str) and isinstance(translation, str)):
+                continue
+            who = "You (other person)" if data.get("speaker") == "a" else "Learner"
+            out.append(f'  {who}: "{text}" ({translation})')
+    return "\n".join(out)
+
+
+def _format_retrieval(prompts: Any) -> str:
+    out: list[str] = []
+    if isinstance(prompts, list):
+        for index, item in enumerate(prompts):
+            data = _as_dict(item)
+            cue = data.get("cue")
+            expected = data.get("expected")
+            if not (isinstance(cue, str) and isinstance(expected, str)):
+                continue
+            scaffold = data.get("scaffold")
+            scaffold_str = (
+                f' (only if they freeze, offer the start: "{scaffold.strip()}")'
+                if isinstance(scaffold, str) and scaffold.strip()
+                else ""
+            )
+            out.append(
+                f'  {index + 1}. Say in English: {cue} '
+                f'Target answer: "{expected}".{scaffold_str}'
+            )
+    return "\n".join(out)
+
+
+def _pedagogy_instructions(custom: dict[str, Any]) -> str:
+    """Build the 5-phase lesson script (hook -> modeled input -> guided
+    retrieval with recasting -> embedded review -> free task) for migrated
+    lessons that carry a `pedagogy` block in call.custom."""
+    lesson = _as_dict(custom.get("lesson"))
+    language = _as_dict(custom.get("language"))
+    pedagogy = _pedagogy_from_custom(custom)
+
+    target_language = (
+        language.get("name")
+        if isinstance(language.get("name"), str)
+        else _selected_language({})
+    )
+    lesson_title = (
+        lesson.get("title") if isinstance(lesson.get("title"), str) else "this lesson"
+    )
+    can_do = pedagogy.get("canDo") if isinstance(pedagogy.get("canDo"), str) else ""
+    hook = (
+        pedagogy.get("situationHook")
+        if isinstance(pedagogy.get("situationHook"), str)
+        else ""
+    )
+
+    chunk_list = _format_chunk_list(pedagogy.get("targetChunks"))
+    dialogue_text = _format_dialogue(pedagogy.get("dialogue"))
+    retrieval_text = _format_retrieval(pedagogy.get("guidedRetrieval"))
+    review = pedagogy.get("reviewChunks")
+    review_text = (
+        _format_chunk_list(review)
+        if isinstance(review, list) and review
+        else "(nothing to review — this is the first lesson)"
+    )
+
+    free_task = _as_dict(pedagogy.get("freeTask"))
+    task_goal = (
+        free_task.get("goal") if isinstance(free_task.get("goal"), str) else ""
+    )
+    task_twist = (
+        free_task.get("twist") if isinstance(free_task.get("twist"), str) else ""
+    )
+    criteria = free_task.get("successCriteria")
+    criteria_text = (
+        "\n".join(
+            f"  - {c}" for c in criteria if isinstance(c, str)
+        )
+        if isinstance(criteria, list) and criteria
+        else "  - The learner completes the task."
+    )
+
+    return f"""
+You are Duo, a warm, human {target_language} teacher running a short spoken lesson.
+One or two short, natural sentences per turn, then stop and let the learner talk.
+Speak English for instructions, meanings, and encouragement; use {target_language}
+only for the chunks being taught.
+
+LESSON: "{lesson_title}" ({target_language})
+By the end, the learner can: {can_do}
+
+Run the lesson in FIVE phases, in order. Advance only when the current phase is
+done. Keep the whole lesson to about 12 minutes.
+
+PHASE 1 — SET THE SCENE (this is your opening turn)
+Paint this situation in one or two warm English sentences, then move into Phase 2:
+{hook}
+
+PHASE 2 — MODELED INPUT (they listen, not speak yet)
+Voice this short exchange so the learner HEARS the chunks in context. Say each
+{target_language} line, give its meaning, and highlight 2–3 key chunks. Do not ask
+them to repeat yet.
+{dialogue_text}
+
+The chunks to teach this lesson:
+{chunk_list}
+
+PHASE 3 — GUIDED RETRIEVAL (one prompt per turn)
+Have the learner produce each chunk. Give the English cue, wait, and listen to what
+they actually say. When they slip, RECAST — naturally model the correct form
+("Nice — you'd usually say '…'. Try it") — never lecture grammar, never interrupt
+mid-sentence. Offer the scaffold only if they freeze.
+{retrieval_text}
+
+PHASE 4 — EMBEDDED REVIEW
+Weave these earlier chunks back into the scene (not as a quiz):
+{review_text}
+
+PHASE 5 — FREE TASK (the real point)
+Run a short unscripted roleplay; you play the other person. Don't coach mid-task —
+let them try. Introduce the curveball once.
+Task: {task_goal}
+Curveball: {task_twist}
+Success = they accomplish it:
+{criteria_text}
+
+WRAP UP
+When the task is done, give one short, genuine congratulation, name what they can
+now do, and tell them they can hang up whenever they like. No new material after.
+
+HARD RULES
+- Teach only the chunks above plus the review chunks. No other new {target_language}.
+- One instruction or question per turn, then stop and listen.
+- Recast errors; don't explain grammar. Praise sparingly and genuinely.
+""".strip()
+
+
+def _pedagogy_opening(custom: dict[str, Any]) -> str:
+    pedagogy = _pedagogy_from_custom(custom)
+    hook = (
+        pedagogy.get("situationHook")
+        if isinstance(pedagogy.get("situationHook"), str)
+        else ""
+    )
+    first_chunk = ""
+    chunks = pedagogy.get("targetChunks")
+    if isinstance(chunks, list) and chunks:
+        first = _as_dict(chunks[0])
+        text = first.get("text")
+        translation = first.get("translation")
+        if isinstance(text, str) and isinstance(translation, str):
+            first_chunk = (
+                f' Then start Phase 2 by saying "{text}" ({translation}) in context.'
+            )
+
+    return (
+        "Begin speaking immediately; do not wait for the learner. "
+        "Open with Phase 1 — set the scene in one or two warm English sentences: "
+        f"{hook}{first_chunk} Keep it short, then continue the lesson."
+    )
+
+
 def _teacher_instructions_from_call(custom: dict[str, Any]) -> str:
+    # Migrated lessons carry a 5-phase pedagogy block — use the richer script.
+    if _pedagogy_from_custom(custom):
+        return _pedagogy_instructions(custom)
+
     lesson = _as_dict(custom.get("lesson"))
     language = _as_dict(custom.get("language"))
     prompt = _as_dict(custom.get("aiTeacherPrompt") or lesson.get("aiTeacherPrompt"))
@@ -238,6 +431,10 @@ HARD RULES:
 
 
 def _opening_prompt(custom: dict[str, Any]) -> str:
+    # Migrated lessons open with the situation hook (Phase 1).
+    if _pedagogy_from_custom(custom):
+        return _pedagogy_opening(custom)
+
     lesson = _as_dict(custom.get("lesson"))
     language = _as_dict(custom.get("language"))
     prompt = _as_dict(custom.get("aiTeacherPrompt") or lesson.get("aiTeacherPrompt"))
