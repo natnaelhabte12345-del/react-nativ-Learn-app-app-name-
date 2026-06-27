@@ -62,7 +62,9 @@ export async function POST(request: Request) {
     }
 
     const openaiKey = process.env.OPENAI_API_KEY;
-    const googleKey = process.env.GOOGLE_API_KEY;
+    // Accept either common Gemini env var name so it works no matter how the key
+    // was stored in .env (some setups use GOOGLE_API_KEY, others GEMINI_API_KEY).
+    const googleKey = process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY;
 
     if (!openaiKey && !googleKey) {
       return jsonError(
@@ -109,8 +111,9 @@ export async function POST(request: Request) {
       return Response.json({ content }, { headers: corsHeaders });
     }
 
-    // Gemini fallback when only GOOGLE_API_KEY is set
-    const geminiModel = process.env.GEMINI_CHAT_MODEL ?? "gemini-1.5-flash";
+    // Gemini fallback when only GOOGLE_API_KEY is set. Default to a current model
+    // (gemini-1.5-flash was retired); override with GEMINI_CHAT_MODEL if needed.
+    const geminiModel = process.env.GEMINI_CHAT_MODEL ?? "gemini-2.0-flash";
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${googleKey}`;
 
     const geminiContents = messages.map((m) => ({
@@ -129,8 +132,12 @@ export async function POST(request: Request) {
     });
 
     if (!geminiResponse.ok) {
-      console.error("Gemini chat error", geminiResponse.status);
-      return jsonError("AI service error. Please try again.", 502);
+      const detail = await geminiResponse.text().catch(() => "");
+      console.error("Gemini chat error", geminiResponse.status, detail);
+      return jsonError(
+        `AI service error (${geminiResponse.status}). Check GOOGLE_API_KEY and GEMINI_CHAT_MODEL.`,
+        502,
+      );
     }
 
     const geminiData = (await geminiResponse.json()) as GeminiResponse;
