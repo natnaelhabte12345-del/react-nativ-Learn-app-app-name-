@@ -52,6 +52,11 @@ const AGENT_OPENING_HEAD_START_MS = 900;
 const AGENT_JOIN_TIMEOUT_MS = 10_000;
 // Treat caption segments arriving within this window as one spoken turn.
 const LEARNER_TURN_DEBOUNCE_MS = 2500;
+// Engagement gates for awarding XP at the end of the lesson. The lesson is the
+// AI-led conversation, so completion is the learner hanging up after Duo wraps
+// up — not a fixed number of spoken words. We just require a real session.
+const MIN_TURNS_FOR_XP = 3;
+const MIN_SECONDS_FOR_XP = 60;
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -78,7 +83,6 @@ export default function AudioLessonScreen() {
   // and lesson completion. Captions from the learner are reliable; matching the
   // agent's speech against vocabulary keywords was not, so we no longer use it.
   const [spokenTurns, setSpokenTurns] = useState(0);
-  const [lessonCompleted, setLessonCompleted] = useState(false);
 
   // Award XP exactly once per session.
   const hasAwardedXpRef = useRef(false);
@@ -151,7 +155,6 @@ export default function AudioLessonScreen() {
         setPermissionMessage(null);
         setRecognizedSpeech(null);
         setSpokenTurns(0);
-        setLessonCompleted(false);
       }
     },
     [getToken],
@@ -219,7 +222,6 @@ export default function AudioLessonScreen() {
     setCallPhase("creating");
     setAgentStatus("idle");
     setErrorMessage(null);
-    setLessonCompleted(false);
     setSpokenTurns(0);
 
     try {
@@ -251,7 +253,6 @@ export default function AudioLessonScreen() {
         // Keep learner audio out of the realtime model until Duo has started.
         await call.microphone.disable().catch(() => undefined);
         await call.startClosedCaptions().catch(() => undefined);
-        const wordCount = lesson.vocabulary.length;
         captionUnsubRef.current = call.on("call.closed_caption", (event: any) => {
           if (!mountedRef.current) return;
           const cc = event?.closed_caption ?? event?.closedCaption;
@@ -267,12 +268,13 @@ export default function AudioLessonScreen() {
 
           setRecognizedSpeech(String(cc.text));
 
-          // Count one practice attempt per utterance. A single utterance can fire
-          // several caption segments, so debounce: only advance after a short gap.
+          // Count how many times the learner has spoken (a rough engagement
+          // signal, no longer a completion target). One utterance can fire
+          // several caption segments, so debounce: only count after a short gap.
           const now = Date.now();
           if (now - lastLearnerTurnRef.current > LEARNER_TURN_DEBOUNCE_MS) {
             lastLearnerTurnRef.current = now;
-            setSpokenTurns((turns) => Math.min(turns + 1, wordCount));
+            setSpokenTurns((turns) => turns + 1);
           }
 
           // Keep the learner's latest STT result visible briefly, then return
@@ -348,41 +350,21 @@ export default function AudioLessonScreen() {
     void handleStartLesson();
   }, [lesson, handleStartLesson]);
 
-  // Detect lesson completion: the learner has practiced every word in the
-  // lesson (one spoken turn per word). spokenTurns is capped at the word count,
-  // so this fires exactly when they reach the end.
-  useEffect(() => {
-    if (!lesson || lessonCompleted) return;
-    if (spokenTurns >= lesson.vocabulary.length) {
-      setLessonCompleted(true);
-    }
-  }, [lesson, lessonCompleted, spokenTurns]);
-
-  // Award XP + mark the lesson complete exactly once. completeLesson is a no-op
-  // for an already-completed lesson, so replaying it is safe, but the ref keeps
-  // streak/activity bookkeeping from firing repeatedly. lessonCompletedRef stops
-  // the unmount handler from logging a (false) lesson_abandoned event.
-  useEffect(() => {
-    if (!lesson || !lessonCompleted || hasAwardedXpRef.current) return;
-    hasAwardedXpRef.current = true;
-    lessonCompletedRef.current = true;
-    // recordActivity first so daily-XP resets before completeLesson adds the reward.
-    recordActivity();
-    completeLesson(lesson.id, lesson.xpReward);
-  }, [lesson, lessonCompleted, completeLesson, recordActivity]);
-
   // ── End call ───────────────────────────────────────────────────────────────
+  // The lesson is the AI-led conversation; "finished" is the learner ending the
+  // call after Duo has wrapped up. We award XP here (once) as long as it was a
+  // real session — Duo actually connected and the learner either spoke a few
+  // turns or stayed long enough to work through the lesson. This replaces the
+  // old "completed after N words" heuristic that fired mid-lesson.
   const handleEndCall = useCallback(async () => {
-    // Safety net: if the learner clearly did the lesson (Duo connected and they
-    // spoke through most of the words) but auto-completion didn't fire, still
-    // grant the XP on the way out. Caption tracking can undercount, and the
-    // reward should never be lost once the work is genuinely done.
-    if (
-      lesson &&
-      !hasAwardedXpRef.current &&
+    const elapsedSeconds = lessonStartTimeRef.current
+      ? (Date.now() - lessonStartTimeRef.current) / 1000
+      : 0;
+    const didRealSession =
       hasConnectedRef.current &&
-      spokenTurns >= lesson.vocabulary.length - 1
-    ) {
+      (spokenTurns >= MIN_TURNS_FOR_XP || elapsedSeconds >= MIN_SECONDS_FOR_XP);
+
+    if (lesson && !hasAwardedXpRef.current && didRealSession) {
       hasAwardedXpRef.current = true;
       lessonCompletedRef.current = true;
       // recordActivity first so daily-XP resets before completeLesson adds the reward.
@@ -423,19 +405,17 @@ export default function AudioLessonScreen() {
     callPhase === "ending" ||
     (callPhase === "active" && agentStatus === "connecting");
   const micDisabled = callPhase !== "active" || !isMicEnabled;
-  const wordCount = lesson?.vocabulary.length ?? 0;
-  // The word the learner should practice now: the first one until they speak,
-  // then the next after each spoken turn. Always a valid item.
-  const practiceTargetIndex =
-    wordCount === 0 ? 0 : Math.min(spokenTurns, wordCount - 1);
-  const practiceItem = lesson?.vocabulary[practiceTargetIndex] ?? null;
-  // How many words the learner has actually said so far.
-  const wordsSaid = Math.min(spokenTurns, wordCount);
-  const lessonStatusValue = lessonCompleted
-    ? "Complete"
-    : agentStatus === "connected"
-      ? "In progress"
-      : "Connecting";
+  // The lesson goal stays on screen as a stable reference, instead of a single
+  // "say this" word that tried (unreliably) to track the conversation.
+  const goalText = lesson?.pedagogy?.canDo ?? lesson?.description ?? "";
+  // Once the learner has engaged a little, surface a gentle wrap-up hint —
+  // finishing is learner-driven (hang up after Duo wraps the lesson).
+  const readyToFinish =
+    callPhase === "active" &&
+    agentStatus === "connected" &&
+    spokenTurns >= MIN_TURNS_FOR_XP;
+  const lessonStatusValue =
+    agentStatus === "connected" ? "In progress" : "Connecting";
 
   // ── Lesson not found ───────────────────────────────────────────────────────
   if (!lesson) {
@@ -528,22 +508,10 @@ export default function AudioLessonScreen() {
                   Use the Android development build for the full lesson.
                 </Text>
               </>
-            ) : lessonCompleted ? (
-              <>
-                <Text className="text-[11px] leading-[16px] font-poppins-semibold uppercase tracking-[1px] text-[#1FA45A]">
-                  Lesson complete
-                </Text>
-                <Text className="mt-1 text-[18px] leading-[25px] font-poppins-bold text-[#1B2340]">
-                  Great job! 🎉 +{lesson.xpReward} XP
-                </Text>
-                <Text className="mt-1 text-[12px] leading-[17px] font-poppins-regular text-[#69728A]">
-                  You can hang up now, or keep chatting with Duo to practice more.
-                </Text>
-              </>
             ) : recognizedSpeech ? (
               <>
                 <Text className="text-[11px] leading-[16px] font-poppins-semibold uppercase tracking-[1px] text-[#7D6BE8]">
-                  I heard
+                  You said
                 </Text>
                 <Text
                   className="mt-1 text-[18px] leading-[25px] font-poppins-semibold text-[#1B2340]"
@@ -552,31 +520,30 @@ export default function AudioLessonScreen() {
                 >
                   {`"${recognizedSpeech}"`}
                 </Text>
-                <Text className="mt-1 text-[12px] leading-[17px] font-poppins-regular text-[#69728A]">
-                  Target: {practiceItem?.term ?? "Wait for Duo's prompt"}
-                  {practiceItem?.pronunciation
-                    ? ` / ${practiceItem.pronunciation}`
-                    : ""}
-                </Text>
                 <Text className="mt-1 text-[10px] leading-[14px] font-poppins-regular text-[#9AA1B3]">
-                  Transcript only. Duo evaluates pronunciation from your audio.
+                  Live transcript — Duo listens to your audio, so just keep talking.
+                </Text>
+              </>
+            ) : readyToFinish ? (
+              <>
+                <Text className="text-[11px] leading-[16px] font-poppins-semibold uppercase tracking-[1px] text-[#1FA45A]">
+                  Doing great
+                </Text>
+                <Text className="mt-1 text-[15px] leading-[21px] font-poppins-semibold text-[#1B2340]">
+                  Keep going with Duo. When Duo says you&apos;re done, tap the red
+                  button to finish and claim your XP.
                 </Text>
               </>
             ) : (
               <>
                 <Text className="text-[11px] leading-[16px] font-poppins-semibold uppercase tracking-[1px] text-[#7D6BE8]">
-                  Say this
+                  This lesson
                 </Text>
-                <Text
-                  className="mt-1 text-[20px] leading-[27px] font-poppins-bold text-[#1B2340]"
-                  selectable
-                >
-                  {practiceItem?.term ?? "Listen to Duo"}
+                <Text className="mt-1 text-[16px] leading-[22px] font-poppins-semibold text-[#1B2340]">
+                  {goalText || "Listen to Duo and follow along."}
                 </Text>
                 <Text className="mt-1 text-[12px] leading-[17px] font-poppins-regular text-[#69728A]">
-                  {practiceItem
-                    ? `${practiceItem.translation} / ${practiceItem.pronunciation}`
-                    : "Your teacher will give you the first phrase."}
+                  Follow Duo&apos;s lead and say each phrase out loud.
                 </Text>
               </>
             )}
@@ -614,8 +581,8 @@ export default function AudioLessonScreen() {
           <View className="h-[34px] w-px bg-[#E9E9F0]" />
           <StatItem
             color="#6484E8"
-            label="Words said"
-            value={`${wordsSaid}/${lesson.vocabulary.length}`}
+            label="Your turns"
+            value={`${spokenTurns}`}
           />
           <View className="h-[34px] w-px bg-[#E9E9F0]" />
           <StatItem
