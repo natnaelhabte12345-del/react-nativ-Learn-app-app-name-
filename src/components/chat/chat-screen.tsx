@@ -1,8 +1,9 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useAuth } from "@clerk/expo";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -16,6 +17,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { defaultLanguageId } from "@/data/languages";
 import { ApiError, postJson } from "@/lib/api";
 import { useLanguageStore } from "@/store/language-store";
+
+// The floating tab bar is absolutely positioned over the bottom of the screen,
+// so the input row needs this much bottom clearance to sit above it. When the
+// keyboard opens the tab bar hides itself, so we collapse the gap to a small value.
+const TAB_BAR_CLEARANCE = 100;
+const KEYBOARD_OPEN_PADDING = 12;
 
 type Message = {
   content: string;
@@ -42,7 +49,28 @@ export function ChatScreen() {
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const flatListRef = useRef<FlatList<Message>>(null);
+
+  // The tab bar hides on keyboard open, so collapse the input's bottom clearance
+  // to avoid a large empty gap above the keyboard while typing.
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSub = Keyboard.addListener(showEvent, () =>
+      setIsKeyboardOpen(true),
+    );
+    const hideSub = Keyboard.addListener(hideEvent, () =>
+      setIsKeyboardOpen(false),
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   async function handleSend() {
     const text = inputText.trim();
@@ -124,9 +152,18 @@ export function ChatScreen() {
 
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+        keyboardVerticalOffset={0}
       >
-        <View style={styles.inputRow}>
+        <View
+          style={[
+            styles.inputRow,
+            {
+              paddingBottom: isKeyboardOpen
+                ? KEYBOARD_OPEN_PADDING
+                : TAB_BAR_CLEARANCE,
+            },
+          ]}
+        >
           <TextInput
             editable={!isLoading}
             multiline
@@ -257,7 +294,6 @@ const styles = StyleSheet.create({
     borderTopColor: "#EEF1F7",
     borderTopWidth: 1,
     flexDirection: "row",
-    paddingBottom: 16,
     paddingHorizontal: 16,
     paddingTop: 12,
   },
