@@ -35,8 +35,7 @@ function makeId(): string {
 }
 
 const WELCOME_MESSAGE: Message = {
-  content:
-    "Hi! I'm Duo, your language tutor 🦜 Chat with me about anything — everyday life, travel, ordering food — and I'll help you practice. What's on your mind?",
+  content: "Hey! 🦜 I'm Duo. What do you want to practice today?",
   id: "welcome",
   role: "assistant",
 };
@@ -108,7 +107,7 @@ export function ChatScreen() {
     } catch (err) {
       const message =
         err instanceof ApiError && err.status === 503
-          ? "Chat needs a server API key (OPENAI_API_KEY or GOOGLE_API_KEY). See the README for setup."
+          ? "Chat is not configured. Add your GEMINI_API_KEY to the .env file."
           : err instanceof Error
             ? err.message
             : "Couldn't get a reply. Please try again.";
