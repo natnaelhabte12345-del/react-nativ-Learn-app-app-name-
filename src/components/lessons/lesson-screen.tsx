@@ -21,7 +21,7 @@ import { lessonsById, lessonsByLanguageId } from "@/data/lessons";
 import { unitsByLanguageId } from "@/data/units";
 import { useLanguageStore } from "@/store/language-store";
 import { useProgressStore } from "@/store/progress-store";
-import type { LanguageId, LearningUnit, Lesson } from "@/types/learning";
+import type { LanguageId, LearningUnit, Lesson, LessonActivity } from "@/types/learning";
 
 const CONTENT_MAX_WIDTH = 500;
 const CONTENT_PADDING = 18;
@@ -102,7 +102,7 @@ export function LessonScreen() {
               ))}
             </View>
           ) : (
-            <PracticeEmptyState />
+            <PracticeContent completedLessonIds={completedLessonIds} />
           )}
         </View>
       </ScrollView>
@@ -238,21 +238,113 @@ function TabButton({ isActive, label, onPress }: TabButtonProps) {
   );
 }
 
-function PracticeEmptyState() {
+type PracticeContentProps = {
+  completedLessonIds: string[];
+};
+
+function PracticeContent({ completedLessonIds }: PracticeContentProps) {
+  const completedLessons = completedLessonIds
+    .map((id) => lessonsById[id])
+    .filter(Boolean);
+
+  if (completedLessons.length === 0) {
+    return (
+      <View className="mt-[28px] items-center rounded-[20px] border border-[#EEF1F7] bg-white px-6 py-10">
+        <Image
+          className="h-[96px] w-[96px]"
+          resizeMode="contain"
+          source={images.mascotWelcome}
+        />
+        <Text className="mt-4 text-[18px] leading-[24px] font-poppins-semibold text-text-primary">
+          Finish a lesson first
+        </Text>
+        <Text className="mt-2 text-center text-[14px] leading-[21px] font-poppins-regular text-[#6F7896]">
+          Complete at least one lesson to unlock vocabulary drills here.
+        </Text>
+      </View>
+    );
+  }
+
+  const quizActivities = completedLessons.flatMap((lesson) =>
+    lesson.activities.filter(
+      (a): a is LessonActivity & { options: NonNullable<LessonActivity["options"]> } =>
+        a.type === "multiple-choice" && Boolean(a.options?.length),
+    ),
+  );
+
   return (
-    <View className="mt-[28px] items-center rounded-[20px] border border-[#EEF1F7] bg-white px-6 py-10">
-      <Image
-        className="h-[96px] w-[96px]"
-        resizeMode="contain"
-        source={images.mascotWelcome}
-      />
-      <Text className="mt-4 text-[18px] leading-[24px] font-poppins-semibold text-text-primary">
-        Practice is on the way
+    <View className="mt-[20px]">
+      <Text className="mb-[14px] text-[13px] leading-[18px] font-poppins-semibold text-[#8E97B0] uppercase tracking-widest">
+        Vocabulary review · {quizActivities.length} questions
       </Text>
-      <Text className="mt-2 text-center text-[14px] leading-[21px] font-poppins-regular text-[#6F7896]">
-        Finish a few lessons first. Your personalized practice drills will unlock
-        here soon.
+      {quizActivities.map((activity) => (
+        <PracticeCard activity={activity} key={activity.id} />
+      ))}
+    </View>
+  );
+}
+
+type PracticeCardProps = {
+  activity: LessonActivity & { options: NonNullable<LessonActivity["options"]> };
+};
+
+function PracticeCard({ activity }: PracticeCardProps) {
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const options = useMemo(() => {
+    const all = [...activity.options];
+    // Stable, deterministic shuffle so order doesn't change on re-render.
+    const shift = activity.id.length % all.length;
+    return [...all.slice(shift), ...all.slice(0, shift)];
+  }, [activity]);
+
+  const answered = selected !== null;
+
+  return (
+    <View
+      className="mb-[12px] rounded-[17px] border border-[#EEF1F7] bg-white px-[20px] py-[18px]"
+      style={styles.lessonCard}
+    >
+      <Text className="text-center text-[15px] leading-[21px] font-poppins-regular text-[#8E97B0]">
+        {activity.prompt}
       </Text>
+
+      <View className="mt-[14px] gap-y-[8px]">
+        {options.map((option) => {
+          const isSelected = selected === option.text;
+          const showCorrect = answered && option.isCorrect;
+          const showWrong = answered && isSelected && !option.isCorrect;
+
+          return (
+            <TouchableOpacity
+              activeOpacity={0.78}
+              accessibilityRole="button"
+              className={`h-[46px] items-center justify-center rounded-[13px] border ${
+                showCorrect
+                  ? "border-[#25C636] bg-[#F0FBF1]"
+                  : showWrong
+                    ? "border-[#F25757] bg-[#FFF3F3]"
+                    : "border-[#EEF1F7] bg-[#F8F9FC]"
+              }`}
+              disabled={answered}
+              key={option.id}
+              onPress={() => setSelected(option.text)}
+            >
+              <Text
+                className={`text-[15px] leading-[21px] font-poppins-semibold ${
+                  showCorrect
+                    ? "text-[#1B9B2A]"
+                    : showWrong
+                      ? "text-[#D63535]"
+                      : "text-text-primary"
+                }`}
+              >
+                {option.text}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     </View>
   );
 }
