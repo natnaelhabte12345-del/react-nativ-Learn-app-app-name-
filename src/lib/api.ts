@@ -85,7 +85,9 @@ export async function deleteJson<TResponse>(
     if (error instanceof Error && error.name === "AbortError") {
       throw new ApiError(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`, 0);
     }
-    console.error("API network request failed", error);
+    if (process.env.NODE_ENV === "development") {
+      console.error("API network request failed", error);
+    }
     throw new ApiError(
       `Network request failed while calling ${url}. Restart Expo and make sure the native app is connected to the same dev server.`,
       0,

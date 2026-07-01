@@ -30,26 +30,36 @@ type Message = {
   role: "assistant" | "user";
 };
 
+const welcomeMessages = {
+  chinese: "你好！(Hello!) I'm Duo. What would you like to practice in Mandarin today?",
+  french: "Bonjour ! (Hello!) I'm Duo. What would you like to practice in French today?",
+  german: "Hallo! (Hello!) I'm Duo. What would you like to practice in German today?",
+  japanese: "こんにちは！(Hello!) I'm Duo. What would you like to practice in Japanese today?",
+  korean: "안녕하세요! (Hello!) I'm Duo. What would you like to practice in Korean today?",
+  spanish: "¡Hola! (Hello!) I'm Duo. What would you like to practice in Spanish today?",
+} as const;
+
 function makeId(): string {
   return `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 }
-
-const WELCOME_MESSAGE: Message = {
-  content: "Hey! 🦜 I'm Duo. What do you want to practice today?",
-  id: "welcome",
-  role: "assistant",
-};
 
 export function ChatScreen() {
   const { getToken } = useAuth();
   const selectedLanguageId =
     useLanguageStore((state) => state.selectedLanguageId) ?? defaultLanguageId;
-  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
+  const [messages, setMessages] = useState<Message[]>(() => [
+    makeWelcomeMessage(selectedLanguageId),
+  ]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const flatListRef = useRef<FlatList<Message>>(null);
+
+  useEffect(() => {
+    setMessages([makeWelcomeMessage(selectedLanguageId)]);
+    setErrorText(null);
+  }, [selectedLanguageId]);
 
   // The tab bar hides on keyboard open, so collapse the input's bottom clearance
   // to avoid a large empty gap above the keyboard while typing.
@@ -83,9 +93,23 @@ export function ChatScreen() {
     setIsLoading(true);
 
     try {
-      const token = await getToken();
+      let token: string | null = null;
+      try {
+        token = await getToken();
+      } catch (error) {
+        if (process.env.NODE_ENV === "development") {
+          console.error("Failed to get Clerk token:", error);
+        }
+        setErrorText("Authentication error. Please sign out and sign in again.");
+        setMessages((prev) => prev.slice(0, -1));
+        return;
+      }
 
-      if (!token) throw new Error("Not signed in.");
+      if (!token) {
+        setErrorText("Not authenticated. Please sign in.");
+        setMessages((prev) => prev.slice(0, -1));
+        return;
+      }
 
       // Build history excluding the static welcome message
       const historyMessages = [...messages, userMsg]
@@ -107,7 +131,7 @@ export function ChatScreen() {
     } catch (err) {
       const message =
         err instanceof ApiError && err.status === 503
-          ? "Chat is not configured. Add your GEMINI_API_KEY to the .env file."
+          ? "Chat is not configured. Add GROQ_API_KEY to the server environment."
           : err instanceof Error
             ? err.message
             : "Couldn't get a reply. Please try again.";
@@ -197,6 +221,14 @@ export function ChatScreen() {
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
+}
+
+function makeWelcomeMessage(languageId: keyof typeof welcomeMessages): Message {
+  return {
+    content: welcomeMessages[languageId],
+    id: "welcome",
+    role: "assistant",
+  };
 }
 
 function MessageBubble({ message }: { message: Message }) {

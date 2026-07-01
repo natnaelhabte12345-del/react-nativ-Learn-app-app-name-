@@ -3,7 +3,7 @@ import { verifyToken } from "@clerk/backend";
 const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Allow-Methods": "POST, DELETE, OPTIONS",
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": process.env.EXPO_PUBLIC_APP_URL || "https://dualingo-clone.expo.dev",
 };
 
 type StartAgentBody = {
@@ -75,7 +75,9 @@ export async function POST(request: Request) {
       { headers: corsHeaders },
     );
   } catch (error) {
-    console.error("Vision Agent session start failed", error);
+    if (process.env.NODE_ENV === "development") {
+      console.error("Vision Agent session start failed", error);
+    }
     return jsonError("Unable to connect the AI teacher.", 500);
   }
 }
@@ -113,7 +115,9 @@ export async function DELETE(request: Request) {
 
     return new Response(null, { headers: corsHeaders, status: 204 });
   } catch (error) {
-    console.error("Vision Agent session stop failed", error);
+    if (process.env.NODE_ENV === "development") {
+      console.error("Vision Agent session stop failed", error);
+    }
     return jsonError("Unable to stop the AI teacher.", 500);
   }
 }
@@ -150,11 +154,14 @@ function getBearerToken(request: Request) {
 
 function getRequiredEnv() {
   const clerkSecretKey = process.env.CLERK_SECRET_KEY;
-  const visionAgentUrl =
-    process.env.VISION_AGENT_URL ?? "http://localhost:8000";
+  const visionAgentUrl = process.env.VISION_AGENT_URL;
 
   if (!clerkSecretKey) {
     throw new Error("CLERK_SECRET_KEY is not configured.");
+  }
+
+  if (!visionAgentUrl) {
+    throw new Error("VISION_AGENT_URL is required. Set it to your deployed Vision Agent endpoint.");
   }
 
   return {

@@ -7,7 +7,7 @@ import type { LanguageId, Lesson, LessonId } from "@/types/learning";
 const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": process.env.EXPO_PUBLIC_APP_URL || "https://dualingo-clone.expo.dev",
 };
 
 type CreateAudioCallBody = {
@@ -235,20 +235,19 @@ function getBearerToken(request: Request) {
 
 function getRequiredEnv() {
   const clerkSecretKey = process.env.CLERK_SECRET_KEY;
-  const streamApiKey =
-    process.env.STREAM_API_KEY ?? process.env.EXPO_PUBLIC_STREAM_API_KEY;
-  const streamSecret = process.env.STREAM_API_SECRET ?? process.env.STREAM_SECRET;
+  const streamApiKey = process.env.STREAM_API_KEY;
+  const streamSecret = process.env.STREAM_API_SECRET;
 
   if (!clerkSecretKey) {
     throw new Error("CLERK_SECRET_KEY is not configured.");
   }
 
   if (!streamApiKey) {
-    throw new Error("STREAM_API_KEY is not configured.");
+    throw new Error("STREAM_API_KEY is not configured. Do not use EXPO_PUBLIC_* for secrets.");
   }
 
   if (!streamSecret) {
-    throw new Error("STREAM_API_SECRET or STREAM_SECRET is not configured.");
+    throw new Error("STREAM_API_SECRET is not configured.");
   }
 
   return {

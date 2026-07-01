@@ -37,6 +37,17 @@ import type { Lesson } from "@/types/learning";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type ClosedCaptionEventData = {
+  text?: string;
+  speaker_id?: string;
+  speakerId?: string;
+};
+
+type ClosedCaptionEvent = {
+  closed_caption?: ClosedCaptionEventData;
+  closedCaption?: ClosedCaptionEventData;
+};
+
 type CallPhase = "idle" | "creating" | "joining" | "active" | "ending" | "error";
 type AgentStatus = "idle" | "connecting" | "connected" | "failed";
 
@@ -253,7 +264,7 @@ export default function AudioLessonScreen() {
         // Keep learner audio out of the realtime model until Duo has started.
         await call.microphone.disable().catch(() => undefined);
         await call.startClosedCaptions().catch(() => undefined);
-        captionUnsubRef.current = call.on("call.closed_caption", (event: any) => {
+        captionUnsubRef.current = call.on("call.closed_caption", (event: ClosedCaptionEvent) => {
           if (!mountedRef.current) return;
           const cc = event?.closed_caption ?? event?.closedCaption;
           if (!cc?.text) return;

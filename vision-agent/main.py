@@ -11,10 +11,9 @@ from vision_agents.plugins import gemini, getstream, openai
 
 
 SERVICE_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SERVICE_DIR.parent
 
-# Keep secrets centralized in the Expo app's root .env.
-load_dotenv(REPO_ROOT / ".env")
+# Only load Vision Agent-specific environment variables.
+# Do NOT load the root .env to prevent exposing unrelated secrets (Clerk, OpenAI, etc.).
 load_dotenv(SERVICE_DIR / ".env", override=False)
 
 

@@ -21,7 +21,9 @@ export function LogoutButton({
     try {
       await signOut();
     } catch (error) {
-      console.error("Failed to sign out", error);
+      if (process.env.NODE_ENV === "development") {
+        console.error("Failed to sign out", error);
+      }
       Alert.alert("Could not log out", "Please try again in a moment.");
       return;
     }
@@ -35,7 +37,9 @@ export function LogoutButton({
       await posthog.flush();
       posthog.reset();
     } catch (error) {
-      console.error("Failed to track sign out", error);
+      if (process.env.NODE_ENV === "development") {
+        console.error("Failed to track sign out", error);
+      }
     }
 
     router.replace("/onboarding");
