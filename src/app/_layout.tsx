@@ -44,7 +44,7 @@ export default function RootLayout() {
         options={{ host: posthogHost }}
         autocapture={{
           captureScreens: false,
-          captureTouches: true,
+          captureTouches: false,
           propsToCapture: ["testID"],
           maxElementsCaptured: 20,
         }}
