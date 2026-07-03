@@ -218,7 +218,9 @@ export async function POST(request: Request) {
       { headers: corsHeaders },
     );
   } catch (error) {
-    console.error("Stream audio call setup failed", error);
+    if (process.env.NODE_ENV === "development") {
+      console.error("Stream audio call setup failed", error);
+    }
     return jsonError("Unable to start the audio lesson call.", 500);
   }
 }
