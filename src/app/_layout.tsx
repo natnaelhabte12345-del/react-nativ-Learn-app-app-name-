@@ -2,11 +2,11 @@ import { ClerkProvider, useAuth } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
 import { useFonts } from "expo-font";
 import {
-    router,
-    Stack,
-    useGlobalSearchParams,
-    usePathname,
-    type Href,
+  router,
+  Stack,
+  useGlobalSearchParams,
+  usePathname,
+  type Href,
 } from "expo-router";
 import { PostHogProvider, usePostHog } from "posthog-react-native";
 import { useEffect, useRef } from "react";

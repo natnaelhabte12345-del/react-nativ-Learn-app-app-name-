@@ -1,23 +1,23 @@
 // Stream SDK types are imported as type-only — no runtime import, no Expo Go crash.
 // The SDK itself is loaded lazily inside tryJoinCall() and only when native modules
 // are available (dev build / standalone). Expo Go skips it cleanly.
-import type { Call, StreamVideoClient } from "@stream-io/video-react-native-sdk";
-import Constants from "expo-constants";
 import { useAuth } from "@clerk/expo";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import type { Call, StreamVideoClient } from "@stream-io/video-react-native-sdk";
+import Constants from "expo-constants";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { usePostHog } from "posthog-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Image,
-  PermissionsAndroid,
-  Platform,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Image,
+    PermissionsAndroid,
+    Platform,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -26,11 +26,11 @@ import { lessonsById } from "@/data/lessons";
 import { units } from "@/data/units";
 import { trackLessonAbandoned, trackLessonStarted } from "@/lib/analytics";
 import {
-  createStreamAudioCall,
-  startStreamAudioAgent,
-  stopStreamAudioAgent,
-  type StreamAudioAgentSession,
-  type StreamAudioCallSession,
+    createStreamAudioCall,
+    startStreamAudioAgent,
+    stopStreamAudioAgent,
+    type StreamAudioAgentSession,
+    type StreamAudioCallSession,
 } from "@/lib/stream-audio";
 import { useProgressStore } from "@/store/progress-store";
 import type { Lesson } from "@/types/learning";
