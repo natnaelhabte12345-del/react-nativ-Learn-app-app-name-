@@ -2,10 +2,31 @@ import { verifyToken } from "@clerk/backend";
 
 import type { LanguageId } from "@/types/learning";
 
+// CORS configuration: require explicit origin to prevent unauthorized access.
+// In development, fallback to localhost for testing; in production, require env var.
+const getAllowedOrigin = (): string => {
+  const configured = process.env.EXPO_PUBLIC_APP_URL;
+  const isDev = process.env.NODE_ENV === "development";
+  
+  if (configured) {
+    return configured;
+  }
+  
+  if (isDev) {
+    // Development: allow common test origins
+    return "http://localhost:3000";
+  }
+  
+  // Production: require explicit configuration
+  throw new Error(
+    "EXPO_PUBLIC_APP_URL is required in production to configure CORS safely."
+  );
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Origin": process.env.EXPO_PUBLIC_APP_URL || "https://dualingo-clone.expo.dev",
+  "Access-Control-Allow-Origin": getAllowedOrigin(),
 };
 
 const languageNames: Record<LanguageId, string> = {

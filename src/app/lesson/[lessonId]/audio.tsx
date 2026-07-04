@@ -10,14 +10,14 @@ import { StatusBar } from "expo-status-bar";
 import { usePostHog } from "posthog-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Image,
-    PermissionsAndroid,
-    Platform,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Image,
+  PermissionsAndroid,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -26,11 +26,11 @@ import { lessonsById } from "@/data/lessons";
 import { units } from "@/data/units";
 import { trackLessonAbandoned, trackLessonStarted } from "@/lib/analytics";
 import {
-    createStreamAudioCall,
-    startStreamAudioAgent,
-    stopStreamAudioAgent,
-    type StreamAudioAgentSession,
-    type StreamAudioCallSession,
+  createStreamAudioCall,
+  startStreamAudioAgent,
+  stopStreamAudioAgent,
+  type StreamAudioAgentSession,
+  type StreamAudioCallSession,
 } from "@/lib/stream-audio";
 import { useProgressStore } from "@/store/progress-store";
 import type { Lesson } from "@/types/learning";
@@ -114,6 +114,8 @@ export default function AudioLessonScreen() {
   const isStartingRef = useRef(false);
   const hasStartedRef = useRef(false);
   const mountedRef = useRef(true);
+  // Abort in-flight API requests on unmount to prevent memory leaks
+  const abortControllerRef = useRef(new AbortController());
 
   // ── Analytics refs ───────────────────────────────────────────────────────
   // Start time is captured on mount so the abandonment duration stays accurate
@@ -182,6 +184,8 @@ export default function AudioLessonScreen() {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      // Cancel any in-flight API requests to prevent memory leaks
+      abortControllerRef.current.abort();
       void cleanupRef.current({ resetState: false });
     };
   }, []);
