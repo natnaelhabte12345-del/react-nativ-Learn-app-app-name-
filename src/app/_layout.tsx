@@ -2,14 +2,14 @@ import { ClerkProvider, useAuth } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
 import { useFonts } from "expo-font";
 import {
-  router,
-  Stack,
-  useGlobalSearchParams,
-  usePathname,
-  type Href,
+    router,
+    Stack,
+    useGlobalSearchParams,
+    usePathname,
+    type Href,
 } from "expo-router";
 import { PostHogProvider, usePostHog } from "posthog-react-native";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Text, View } from "react-native";
 import "../../global.css";
 
@@ -164,6 +164,19 @@ function PostHogScreenTracker() {
     (state) => state.selectedLanguageId,
   );
 
+  // Memoize screen properties to avoid unnecessary analytics events from
+  // recreating the object on every render. The screenKey only changes when
+  // the actual route params change, preventing duplicate track calls.
+  const screenProperties = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(params).sort(([leftKey], [rightKey]) =>
+          leftKey.localeCompare(rightKey),
+        ),
+      ),
+    [params],
+  );
+
   useEffect(() => {
     if (
       !isLoaded ||
@@ -173,11 +186,6 @@ function PostHogScreenTracker() {
       return;
     }
 
-    const screenProperties = Object.fromEntries(
-      Object.entries(params).sort(([leftKey], [rightKey]) =>
-        leftKey.localeCompare(rightKey),
-      ),
-    );
     const screenKey = `${pathname}:${JSON.stringify(screenProperties)}`;
 
     if (lastTrackedScreen.current === screenKey) {
@@ -190,7 +198,7 @@ function PostHogScreenTracker() {
     hasHydrated,
     isLoaded,
     isSignedIn,
-    params,
+    screenProperties,
     pathname,
     posthog,
     selectedLanguageId,
