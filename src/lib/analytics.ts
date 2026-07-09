@@ -50,3 +50,30 @@ export function trackLessonAbandoned(
 ) {
   posthog.capture("lesson_abandoned", properties);
 }
+
+export function trackLessonCompleted(
+  posthog: PostHog,
+  properties: {
+    lesson_id: string;
+    language: string;
+    spoken_turns: number;
+    xp_reward: number;
+  },
+) {
+  posthog.capture("lesson_completed", properties);
+}
+
+// Fired when the learner finishes a personalized review/practice session, so
+// their recall performance is visible in analytics alongside lesson activity.
+export function trackPracticeCompleted(
+  posthog: PostHog,
+  properties: {
+    language: string;
+    mode: "lesson" | "review";
+    total: number;
+    correct: number;
+    missed: number;
+  },
+) {
+  posthog.capture("practice_completed", properties);
+}

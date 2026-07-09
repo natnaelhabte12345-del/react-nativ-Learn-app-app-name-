@@ -4,8 +4,8 @@ export const units = [
   {
     id: "spanish-cafe-path-3",
     languageId: "spanish",
-    title: "At the Caf\u00E9",
-    description: "Practice everyday Spanish across greetings, cafes, travel, shopping, and family.",
+    title: "Spanish Essentials",
+    description: "Practice everyday Spanish: greetings, caf\u00E9s, travel, shopping, family, prices, restaurants, directions, and small talk.",
     order: 2,
     lessonIds: [
       "spanish-greetings",
@@ -14,6 +14,10 @@ export const units = [
       "spanish-travel-directions",
       "spanish-shopping",
       "spanish-family-friends",
+      "spanish-numbers-prices",
+      "spanish-restaurant",
+      "spanish-getting-around",
+      "spanish-small-talk",
     ],
   },
   {
@@ -64,8 +68,8 @@ export const units = [
   {
     id: "german-cafe-path-3",
     languageId: "german",
-    title: "At the Caf\u00E9",
-    description: "Practice beginner German across greetings, cafes, travel, shopping, and family.",
+    title: "German Essentials",
+    description: "Practice beginner German: greetings, caf\u00E9s, travel, shopping, family, prices, restaurants, directions, and small talk.",
     order: 2,
     lessonIds: [
       "german-greetings",
@@ -74,6 +78,10 @@ export const units = [
       "german-travel-directions",
       "german-shopping",
       "german-family-friends",
+      "german-numbers-prices",
+      "german-restaurant",
+      "german-getting-around",
+      "german-small-talk",
     ],
   },
   {
