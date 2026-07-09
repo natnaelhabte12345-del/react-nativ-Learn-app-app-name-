@@ -5,10 +5,10 @@ import { useAuth } from "@clerk/expo";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { Call, StreamVideoClient } from "@stream-io/video-react-native-sdk";
 import Constants from "expo-constants";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, type Href } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { usePostHog } from "posthog-react-native";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -24,7 +24,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { images } from "@/constants/images";
 import { lessonsById } from "@/data/lessons";
 import { units } from "@/data/units";
-import { trackLessonAbandoned, trackLessonStarted } from "@/lib/analytics";
+import {
+  trackLessonAbandoned,
+  trackLessonCompleted,
+  trackLessonStarted,
+} from "@/lib/analytics";
 import {
   createStreamAudioCall,
   startStreamAudioAgent,
@@ -94,6 +98,8 @@ export default function AudioLessonScreen() {
   // and lesson completion. Captions from the learner are reliable; matching the
   // agent's speech against vocabulary keywords was not, so we no longer use it.
   const [spokenTurns, setSpokenTurns] = useState(0);
+  // Index into the rotating "try saying" hints shown while the learner listens.
+  const [hintIndex, setHintIndex] = useState(0);
 
   // Award XP exactly once per session.
   const hasAwardedXpRef = useRef(false);
@@ -293,11 +299,12 @@ export default function AudioLessonScreen() {
           }
 
           // Keep the learner's latest STT result visible briefly, then return
-          // to the stable practice prompt instead of showing stale dialogue.
+          // to the rotating practice hint. A short window avoids stale captions
+          // lingering on screen (which read as "lag").
           if (captionClearRef.current) clearTimeout(captionClearRef.current);
           captionClearRef.current = setTimeout(() => {
             if (mountedRef.current) setRecognizedSpeech(null);
-          }, 8000);
+          }, 4000);
         }) as unknown as () => void;
       }
 
@@ -379,17 +386,45 @@ export default function AudioLessonScreen() {
       hasConnectedRef.current &&
       (spokenTurns >= MIN_TURNS_FOR_XP || elapsedSeconds >= MIN_SECONDS_FOR_XP);
 
-    if (lesson && !hasAwardedXpRef.current && didRealSession) {
+    const justCompleted = Boolean(lesson && !hasAwardedXpRef.current && didRealSession);
+    if (lesson && justCompleted) {
       hasAwardedXpRef.current = true;
       lessonCompletedRef.current = true;
       // recordActivity first so daily-XP resets before completeLesson adds the reward.
       recordActivity();
       completeLesson(lesson.id, lesson.xpReward);
+      trackLessonCompleted(posthog, {
+        lesson_id: lesson.id,
+        language: lesson.languageId,
+        spoken_turns: spokenTurns,
+        xp_reward: lesson.xpReward,
+      });
     }
     setCallPhase("ending");
     await cleanup({ resetState: false });
-    router.back();
-  }, [cleanup, lesson, spokenTurns, completeLesson, recordActivity]);
+    // After a real lesson, send the learner into personalized practice that
+    // reinforces exactly what they just heard (plus anything now due for review).
+    if (lesson && justCompleted) {
+      router.replace(`/practice?lessonId=${lesson.id}` as Href);
+    } else {
+      router.back();
+    }
+  }, [cleanup, lesson, spokenTurns, completeLesson, recordActivity, posthog]);
+
+  // ── Rotating hints ───────────────────────────────────────────────────────
+  // Hints from the lesson's own chunks/phrases, shown one at a time while the
+  // learner listens (see the practice panel) so the screen always suggests
+  // *what to say next* instead of one static line that read as "always the same".
+  const sayHints = useMemo(() => buildSayHints(lesson), [lesson]);
+
+  // Cycle the "try saying" hint every few seconds while the lesson is live.
+  useEffect(() => {
+    if (callPhase !== "active" || sayHints.length <= 1) return;
+    const timer = setInterval(() => {
+      setHintIndex((index) => index + 1);
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [callPhase, sayHints.length]);
 
   // ── Interrupt ──────────────────────────────────────────────────────────────
   // Mic is always on — the agent's VAD stops it when the user speaks naturally.
@@ -423,6 +458,9 @@ export default function AudioLessonScreen() {
   // The lesson goal stays on screen as a stable reference, instead of a single
   // "say this" word that tried (unreliably) to track the conversation.
   const goalText = lesson?.pedagogy?.canDo ?? lesson?.description ?? "";
+
+  const currentHint =
+    sayHints.length > 0 ? sayHints[hintIndex % sayHints.length] : null;
   // Once the learner has engaged a little, surface a gentle wrap-up hint —
   // finishing is learner-driven (hang up after Duo wraps the lesson).
   const readyToFinish =
@@ -547,6 +585,21 @@ export default function AudioLessonScreen() {
                 <Text className="mt-1 text-[15px] leading-[21px] font-poppins-semibold text-[#1B2340]">
                   Keep going with Duo. When Duo says you&apos;re done, tap the red
                   button to finish and claim your XP.
+                </Text>
+              </>
+            ) : currentHint ? (
+              <>
+                <Text className="text-[11px] leading-[16px] font-poppins-semibold uppercase tracking-[1px] text-[#7D6BE8]">
+                  Try saying
+                </Text>
+                <Text
+                  className="mt-1 text-[18px] leading-[25px] font-poppins-semibold text-[#1B2340]"
+                  numberOfLines={2}
+                >
+                  {currentHint.text}
+                </Text>
+                <Text className="mt-1 text-[12px] leading-[17px] font-poppins-regular text-[#69728A]">
+                  {currentHint.translation}
                 </Text>
               </>
             ) : (
@@ -816,6 +869,32 @@ function delay(milliseconds: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, milliseconds);
   });
+}
+
+// The phrases the learner should try, drawn from the lesson's own content. The
+// practice panel rotates through these so it always suggests something concrete.
+function buildSayHints(
+  lesson: Lesson | null,
+): { text: string; translation: string }[] {
+  if (!lesson) return [];
+
+  if (lesson.pedagogy?.targetChunks.length) {
+    return lesson.pedagogy.targetChunks.map((chunk) => ({
+      text: chunk.text,
+      translation: chunk.translation,
+    }));
+  }
+
+  return [
+    ...lesson.phrases.map((phrase) => ({
+      text: phrase.text,
+      translation: phrase.translation,
+    })),
+    ...lesson.vocabulary.map((item) => ({
+      text: item.term,
+      translation: item.translation,
+    })),
+  ];
 }
 
 // 1-based position of the lesson within its unit, used as lesson_number.

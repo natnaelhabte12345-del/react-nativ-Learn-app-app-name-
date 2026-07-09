@@ -16,7 +16,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { defaultLanguageId } from "@/data/languages";
 import { ApiError, postJson } from "@/lib/api";
+import { buildTutorPersonalization } from "@/lib/learning-review";
 import { useLanguageStore } from "@/store/language-store";
+import { useProgressStore } from "@/store/progress-store";
 
 // The floating tab bar is absolutely positioned over the bottom of the screen,
 // so the input row needs this much bottom clearance to sit above it. When the
@@ -47,6 +49,8 @@ export function ChatScreen() {
   const { getToken } = useAuth();
   const selectedLanguageId =
     useLanguageStore((state) => state.selectedLanguageId) ?? defaultLanguageId;
+  const completedLessonIds = useProgressStore((state) => state.completedLessonIds);
+  const reviewProgress = useProgressStore((state) => state.reviewProgress);
   const [messages, setMessages] = useState<Message[]>(() => [
     makeWelcomeMessage(selectedLanguageId),
   ]);
@@ -116,9 +120,25 @@ export function ChatScreen() {
         .filter((m) => m.id !== "welcome")
         .map((m) => ({ content: m.content, role: m.role }));
 
+      // Snapshot what the learner has studied + their weak spots so Duo can build
+      // on real material instead of generic phrases.
+      const personalizationSnapshot = buildTutorPersonalization({
+        completedLessonIds,
+        languageId: selectedLanguageId,
+        reviewProgress,
+      });
+
       const result = await postJson<{ content: string }>(
         "/api/chat",
-        { languageId: selectedLanguageId, messages: historyMessages },
+        {
+          languageId: selectedLanguageId,
+          messages: historyMessages,
+          personalization: {
+            learnedChunks: personalizationSnapshot.learnedChunks,
+            weakChunks: personalizationSnapshot.weakChunks,
+            completedCount: personalizationSnapshot.completedLessonIds.length,
+          },
+        },
         { token },
       );
 
@@ -131,7 +151,7 @@ export function ChatScreen() {
     } catch (err) {
       const message =
         err instanceof ApiError && err.status === 503
-          ? "Chat is not configured. Add GROQ_API_KEY to the server environment."
+          ? "Chat is not configured. Add OPENAI_API_KEY (or GROQ_API_KEY) to the server environment."
           : err instanceof Error
             ? err.message
             : "Couldn't get a reply. Please try again.";

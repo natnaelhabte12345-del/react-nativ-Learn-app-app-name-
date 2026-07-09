@@ -36,6 +36,34 @@ function yesterdayISO(): string {
 export const DAILY_GOAL_XP = 20;
 export const DAILY_REWARD_BONUS_XP = 5;
 
+// ─── Spaced repetition (Leitner boxes) ──────────────────────────────────────
+// Each reviewable chunk moves up a "box" when the learner recalls it correctly
+// and drops back to box 0 when they miss it. The box index chooses how long we
+// wait before showing it again — the core of evidence-based review: items you
+// know are spaced further out, items you struggle with come back soon.
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+export const REVIEW_INTERVALS_MS = [
+  0, // box 0 — due immediately (just missed, or brand new)
+  4 * HOUR_MS, // box 1
+  DAY_MS, // box 2
+  3 * DAY_MS, // box 3
+  7 * DAY_MS, // box 4
+  21 * DAY_MS, // box 5 — considered "learned"
+];
+export const MAX_REVIEW_STRENGTH = REVIEW_INTERVALS_MS.length - 1;
+
+// Per-chunk memory of how well the learner knows it. `strength` is the Leitner
+// box (0..MAX). `lapses` counts misses — the signal we use to surface weak
+// items to the tutor and prioritize them in practice.
+export type ReviewProgress = {
+  strength: number;
+  lapses: number;
+  seen: number;
+  dueAt: number;
+  lastReviewedAt: number;
+};
+
 type ProgressState = {
   hasHydrated: boolean;
   completedLessonIds: string[];
@@ -45,9 +73,12 @@ type ProgressState = {
   // The local date (YYYY-MM-DD) on which the daily-goal reward was last claimed.
   // Used to ensure the reward chest can only be claimed once per day.
   lastRewardDate: string | null;
+  // Spaced-repetition memory keyed by review-target id (see lib/learning-review).
+  reviewProgress: Record<string, ReviewProgress>;
 
   completeLesson: (lessonId: string, xpReward?: number) => void;
   recordActivity: () => void;
+  recordReviewResult: (reviewId: string, correct: boolean) => void;
   claimDailyReward: () => void;
   resetProgress: () => void;
   setHasHydrated: (hasHydrated: boolean) => void;
@@ -67,6 +98,7 @@ export const useProgressStore = create<ProgressState>()(
       dailyXp: 0,
       lastActiveDate: null,
       lastRewardDate: null,
+      reviewProgress: {},
       setHasHydrated: (hasHydrated) => set({ hasHydrated }),
 
       completeLesson: (lessonId, xpReward = 10) =>
@@ -93,6 +125,36 @@ export const useProgressStore = create<ProgressState>()(
           };
         }),
 
+      // Record one practice answer for a review target. Correct answers move the
+      // chunk up a Leitner box (longer wait); misses drop it to box 0 and bump
+      // the lapse counter so it resurfaces soon and is flagged as a weak spot.
+      recordReviewResult: (reviewId, correct) =>
+        set((state) => {
+          const now = Date.now();
+          const prev = state.reviewProgress[reviewId] ?? {
+            strength: 0,
+            lapses: 0,
+            seen: 0,
+            dueAt: 0,
+            lastReviewedAt: 0,
+          };
+          const strength = correct
+            ? Math.min(prev.strength + 1, MAX_REVIEW_STRENGTH)
+            : 0;
+          return {
+            reviewProgress: {
+              ...state.reviewProgress,
+              [reviewId]: {
+                strength,
+                lapses: correct ? prev.lapses : prev.lapses + 1,
+                seen: prev.seen + 1,
+                dueAt: now + REVIEW_INTERVALS_MS[strength],
+                lastReviewedAt: now,
+              },
+            },
+          };
+        }),
+
       // Claim the once-per-day daily-goal reward. Guarded so it only pays out
       // when the goal is actually met and hasn't already been claimed today.
       claimDailyReward: () =>
@@ -113,11 +175,12 @@ export const useProgressStore = create<ProgressState>()(
           dailyXp: 0,
           lastActiveDate: null,
           lastRewardDate: null,
+          reviewProgress: {},
         }),
     }),
     {
       name: "fluentflow-progress-state",
-      version: 2,
+      version: 3,
       onRehydrateStorage: (state) => (_rehydratedState, error) => {
         if (error) {
           console.warn("Failed to hydrate progress state", error);
@@ -127,15 +190,25 @@ export const useProgressStore = create<ProgressState>()(
         // write streak/XP against stale defaults.
         state.setHasHydrated(true);
       },
-      migrate: (persistedState) => {
+      migrate: (persistedState, version) => {
         const state = persistedState as Partial<ProgressState>;
 
         // Version 1 marked a lesson complete whenever a call was ended, even if
         // the learner had not finished it. Clear those invalid completion flags.
+        if (version < 2) {
+          return {
+            ...state,
+            completedLessonIds: [],
+            dailyXp: 0,
+            reviewProgress: {},
+          } as ProgressState;
+        }
+
+        // v2 -> v3 added spaced-repetition review memory. Keep existing progress
+        // intact and just backfill the new field.
         return {
           ...state,
-          completedLessonIds: [],
-          dailyXp: 0,
+          reviewProgress: state.reviewProgress ?? {},
         } as ProgressState;
       },
       storage: createJSONStorage(() =>

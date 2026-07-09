@@ -19,9 +19,14 @@ import { getLessonImageSource, images } from "@/constants/images";
 import { defaultLanguageId } from "@/data/languages";
 import { lessonsById, lessonsByLanguageId } from "@/data/lessons";
 import { unitsByLanguageId } from "@/data/units";
+import {
+  getDueReviewTargets,
+  getWeakReviewTargets,
+  type ReviewTarget,
+} from "@/lib/learning-review";
 import { useLanguageStore } from "@/store/language-store";
 import { useProgressStore } from "@/store/progress-store";
-import type { LanguageId, LearningUnit, Lesson, LessonActivity } from "@/types/learning";
+import type { LanguageId, LearningUnit, Lesson } from "@/types/learning";
 
 const CONTENT_MAX_WIDTH = 500;
 const CONTENT_PADDING = 18;
@@ -243,11 +248,15 @@ type PracticeContentProps = {
 };
 
 function PracticeContent({ completedLessonIds }: PracticeContentProps) {
-  const completedLessons = completedLessonIds
-    .map((id) => lessonsById[id])
-    .filter(Boolean);
+  const selectedLanguageId =
+    useLanguageStore((state) => state.selectedLanguageId) ?? defaultLanguageId;
+  const reviewProgress = useProgressStore((state) => state.reviewProgress);
 
-  if (completedLessons.length === 0) {
+  const languageCompleted = completedLessonIds.filter(
+    (id) => lessonsById[id]?.languageId === selectedLanguageId,
+  );
+
+  if (languageCompleted.length === 0) {
     return (
       <View className="mt-[28px] items-center rounded-[20px] border border-[#EEF1F7] bg-white px-6 py-10">
         <Image
@@ -259,91 +268,84 @@ function PracticeContent({ completedLessonIds }: PracticeContentProps) {
           Finish a lesson first
         </Text>
         <Text className="mt-2 text-center text-[14px] leading-[21px] font-poppins-regular text-[#6F7896]">
-          Complete at least one lesson to unlock vocabulary drills here.
+          Complete at least one lesson to unlock personalized practice here.
         </Text>
       </View>
     );
   }
 
-  const quizActivities = completedLessons.flatMap((lesson) =>
-    lesson.activities.filter(
-      (a): a is LessonActivity & { options: NonNullable<LessonActivity["options"]> } =>
-        a.type === "multiple-choice" && Boolean(a.options?.length),
-    ),
-  );
+  const due = getDueReviewTargets({
+    completedLessonIds,
+    languageId: selectedLanguageId,
+    reviewProgress,
+  });
+  const weak = getWeakReviewTargets({
+    completedLessonIds,
+    languageId: selectedLanguageId,
+    reviewProgress,
+  });
 
   return (
     <View className="mt-[20px]">
-      <Text className="mb-[14px] text-[13px] leading-[18px] font-poppins-semibold text-[#8E97B0] uppercase tracking-widest">
-        Vocabulary review · {quizActivities.length} questions
-      </Text>
-      {quizActivities.map((activity) => (
-        <PracticeCard activity={activity} key={activity.id} />
-      ))}
+      <View
+        className="overflow-hidden rounded-[20px] bg-lingua-deep-purple px-5 py-5"
+        style={styles.reviewCardShadow}
+      >
+        <Text className="text-[12px] leading-[17px] font-poppins-semibold uppercase tracking-[1px] text-[#C4B5FF]">
+          Personalized review
+        </Text>
+        <Text className="mt-1 text-[20px] leading-[26px] font-poppins-bold text-white">
+          {due.length > 0
+            ? `${due.length} ${due.length === 1 ? "item" : "items"} to review`
+            : "You're all caught up"}
+        </Text>
+        <Text className="mt-1 text-[13px] leading-[19px] font-poppins-regular text-[#D3C7FF]">
+          {due.length > 0
+            ? "Built from the words you've studied — misses come back sooner."
+            : "Review again to keep your words in long-term memory."}
+        </Text>
+        <TouchableOpacity
+          activeOpacity={0.86}
+          accessibilityRole="button"
+          className="mt-4 h-[46px] w-[168px] flex-row items-center justify-center rounded-[14px] bg-white"
+          onPress={() => router.push("/practice" as Href)}
+        >
+          <Ionicons color="#5B3BF6" name="flash" size={17} />
+          <Text className="ml-2 text-[14px] font-poppins-semibold text-lingua-deep-purple">
+            {due.length > 0 ? "Start review" : "Practice anyway"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {weak.length > 0 ? (
+        <View className="mt-6">
+          <Text className="mb-[12px] text-[13px] leading-[18px] font-poppins-semibold uppercase tracking-widest text-[#8E97B0]">
+            Your weak spots
+          </Text>
+          {weak.slice(0, 6).map((target) => (
+            <WeakSpotRow key={target.id} target={target} />
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
 
-type PracticeCardProps = {
-  activity: LessonActivity & { options: NonNullable<LessonActivity["options"]> };
-};
-
-function PracticeCard({ activity }: PracticeCardProps) {
-  const [selected, setSelected] = useState<string | null>(null);
-
-  const options = useMemo(() => {
-    const all = [...activity.options];
-    // Stable, deterministic shuffle so order doesn't change on re-render.
-    const shift = activity.id.length % all.length;
-    return [...all.slice(shift), ...all.slice(0, shift)];
-  }, [activity]);
-
-  const answered = selected !== null;
-
+function WeakSpotRow({ target }: { target: ReviewTarget }) {
   return (
     <View
-      className="mb-[12px] rounded-[17px] border border-[#EEF1F7] bg-white px-[20px] py-[18px]"
-      style={styles.lessonCard}
+      className="mb-[10px] flex-row items-center rounded-[15px] border border-[#F3E6E6] bg-[#FFF8F8] px-4 py-3"
     >
-      <Text className="text-center text-[15px] leading-[21px] font-poppins-regular text-[#8E97B0]">
-        {activity.prompt}
-      </Text>
-
-      <View className="mt-[14px] gap-y-[8px]">
-        {options.map((option) => {
-          const isSelected = selected === option.text;
-          const showCorrect = answered && option.isCorrect;
-          const showWrong = answered && isSelected && !option.isCorrect;
-
-          return (
-            <TouchableOpacity
-              activeOpacity={0.78}
-              accessibilityRole="button"
-              className={`h-[46px] items-center justify-center rounded-[13px] border ${
-                showCorrect
-                  ? "border-[#25C636] bg-[#F0FBF1]"
-                  : showWrong
-                    ? "border-[#F25757] bg-[#FFF3F3]"
-                    : "border-[#EEF1F7] bg-[#F8F9FC]"
-              }`}
-              disabled={answered}
-              key={option.id}
-              onPress={() => setSelected(option.text)}
-            >
-              <Text
-                className={`text-[15px] leading-[21px] font-poppins-semibold ${
-                  showCorrect
-                    ? "text-[#1B9B2A]"
-                    : showWrong
-                      ? "text-[#D63535]"
-                      : "text-text-primary"
-                }`}
-              >
-                {option.text}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+      <View className="h-[34px] w-[34px] items-center justify-center rounded-full bg-[#FDECEC]">
+        <Ionicons color="#E0705A" name="alert-circle" size={18} />
+      </View>
+      <View className="ml-3 flex-1">
+        <Text className="text-[15px] leading-[20px] font-poppins-semibold text-text-primary">
+          {target.term}
+        </Text>
+        <Text className="text-[12px] leading-[17px] font-poppins-regular text-[#8B7B7B]">
+          {target.translation}
+        </Text>
       </View>
     </View>
   );
@@ -530,6 +532,13 @@ const styles = StyleSheet.create({
     shadowOffset: { height: 3, width: 0 },
     shadowOpacity: 0.04,
     shadowRadius: 8,
+  },
+  reviewCardShadow: {
+    elevation: 8,
+    shadowColor: "#321d93",
+    shadowOffset: { height: 6, width: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
   },
   safeArea: {
     backgroundColor: "#FFFFFF",
