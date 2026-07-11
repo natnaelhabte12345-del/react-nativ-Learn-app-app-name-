@@ -1736,6 +1736,27 @@ const lessonSeeds: LessonSeed[] = [
     scenario: "Duo makes friendly small talk, helping the learner say what they like to do and ask the same back in German.",
     openingLine: "You're making friendly small talk. Ask the learner 'Was machst du gern?' and help them answer with 'ich mag'.",
   },
+  {
+    id: "german-time",
+    unitId: unitIds.german,
+    languageId: "german",
+    title: "Time & Days",
+    description: "Tell the time, name days, and arrange to meet.",
+    imageKey: "lessonDailyLife",
+    goalTitle: "Make a plan",
+    goalDescription: "Ask the time and agree when to meet.",
+    vocabulary: [
+      { id: "de-time-1", term: "Wie spät ist es?", translation: "What time is it?", pronunciation: "vee shpayt ist es" },
+      { id: "de-time-3", term: "Um wie viel Uhr?", translation: "At what time?", pronunciation: "oom vee feel oor" },
+      { id: "de-time-5", term: "Am Montag", translation: "On Monday", pronunciation: "am mohn-tahk" },
+    ],
+    phrases: [
+      { id: "de-time-phrase", text: "Wann hast du Zeit?", translation: "When do you have time?", pronunciation: "van hast doo tsait", context: "Use this to make plans with someone." },
+    ],
+    wrongAnswers: ["How much is that?", "Where is the station?"],
+    scenario: "Duo helps the learner tell the time, name days, and set up a simple appointment in German.",
+    openingLine: "You're planning to meet the learner this week. Help them ask 'Wann hast du Zeit?' and agree on a time.",
+  },
 ];
 
 // ─── 5-phase pedagogy (Spanish track) ──────────────────────────────────────
@@ -3329,6 +3350,40 @@ const lessonPedagogyById: Record<string, LessonPedagogy> = {
       goal: "Get to know someone: ask what they like, share what you like, and react.",
       twist: "You both like the same thing — say so.",
       successCriteria: ["Asked what they like", "Said what you like with 'ich mag'", "Reacted naturally"],
+    },
+  },
+  "german-time": {
+    cefrLevel: "A1",
+    canDo: "Ask and tell the time, name days, and arrange a simple appointment.",
+    situationHook: "A German friend wants to meet up this week and asks when you're free.",
+    dialogue: [
+      { speaker: "a", text: "Wollen wir uns treffen? Wann hast du Zeit?", translation: "Shall we meet? When do you have time?" },
+      { speaker: "b", text: "Am Montag. Um wie viel Uhr?", translation: "On Monday. At what time?" },
+      { speaker: "a", text: "Um drei Uhr?", translation: "At three o'clock?" },
+      { speaker: "b", text: "Perfekt. Bis Montag um drei!", translation: "Perfect. See you Monday at three!" },
+    ],
+    targetChunks: [
+      { id: "de-time-1", text: "wie spät ist es?", translation: "what time is it?", pronunciation: "vee shpayt ist es" },
+      { id: "de-time-2", text: "es ist drei Uhr", translation: "it's three o'clock", pronunciation: "es ist dry oor" },
+      { id: "de-time-3", text: "um wie viel Uhr?", translation: "at what time?", pronunciation: "oom vee feel oor" },
+      { id: "de-time-4", text: "wann hast du Zeit?", translation: "when do you have time?", pronunciation: "van hast doo tsait" },
+      { id: "de-time-5", text: "am Montag", translation: "on Monday", pronunciation: "am mohn-tahk" },
+      { id: "de-time-6", text: "heute / morgen", translation: "today / tomorrow", pronunciation: "hoy-tuh / mor-gen" },
+    ],
+    guidedRetrieval: [
+      { id: "de-time-r1", cue: "Ask what time it is.", expected: "Wie spät ist es?", scaffold: "Wie spät…" },
+      { id: "de-time-r2", cue: "Ask a friend when they have time.", expected: "Wann hast du Zeit?" },
+      { id: "de-time-r3", cue: "Suggest meeting on Monday.", expected: "Am Montag" },
+      { id: "de-time-r4", cue: "Ask at what time.", expected: "Um wie viel Uhr?" },
+    ],
+    reviewChunks: [
+      { id: "de-daily-1", text: "guten Morgen", translation: "good morning", pronunciation: "goo-ten mor-gen" },
+      { id: "de-num-2", text: "das macht zehn Euro", translation: "that's ten euros", pronunciation: "das makht tsayn oy-roh" },
+    ],
+    freeTask: {
+      goal: "Arrange to meet a friend: agree on a day and a time.",
+      twist: "Your first suggested time doesn't work for them — offer another.",
+      successCriteria: ["Asked when they have time", "Named a day with 'am …'", "Agreed on a time with 'um … Uhr'"],
     },
   },
 };

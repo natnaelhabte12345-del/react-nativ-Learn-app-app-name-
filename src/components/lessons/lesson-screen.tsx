@@ -5,6 +5,7 @@ import {
   Animated,
   Easing,
   Image,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,25 +16,42 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppLoadingScreen } from "@/components/ui/app-loading-screen";
-import { getLessonImageSource, images } from "@/constants/images";
-import { defaultLanguageId } from "@/data/languages";
-import { lessonsById, lessonsByLanguageId } from "@/data/lessons";
-import { unitsByLanguageId } from "@/data/units";
+import { images } from "@/constants/images";
+import { defaultLanguageId, languages } from "@/data/languages";
+import { lessonsById } from "@/data/lessons";
+import { defaultTrackId, tracksById, type Track } from "@/data/tracks";
 import {
   getDueReviewTargets,
   getWeakReviewTargets,
   type ReviewTarget,
 } from "@/lib/learning-review";
+import { getTrackLessons } from "@/lib/tracks";
 import { useLanguageStore } from "@/store/language-store";
 import { useProgressStore } from "@/store/progress-store";
-import type { LanguageId, LearningUnit, Lesson } from "@/types/learning";
+import type { LanguageId, Lesson } from "@/types/learning";
+
+// A small, on-theme prop next to the mascot — like Duolingo scattering its owl
+// and treasure chest along the path instead of leaving it bare. One emoji per
+// language keeps this lightweight (no new assets/libraries needed).
+const LANGUAGE_PROPS: Record<LanguageId, string> = {
+  spanish: "🌮",
+  french: "🥐",
+  german: "🥨",
+  japanese: "🍣",
+  korean: "🍚",
+  chinese: "🥟",
+};
 
 const CONTENT_MAX_WIDTH = 500;
 const CONTENT_PADDING = 18;
-// Ratio of the header-less café illustration (assets/images/lesson-cafe-scene.png).
-const SCENE_ASPECT_RATIO = 546 / 272;
-// How far the floating tab card overlaps the bottom edge of the illustration.
-const SEGMENT_OVERLAP = 26;
+const PURPLE = "#5B3BF6";
+const PURPLE_LIGHT = "#6C4EF5";
+const PURPLE_DEEP = "#4A2FD0";
+const GOLD = "#FFC107";
+const GOLD_DEEP = "#E0A500";
+const LOCK = "#E7E9F2";
+const LOCK_DEEP = "#D2D6E4";
+
 type LessonStatus = "completed" | "inProgress" | "notStarted";
 type LessonTab = "lessons" | "practice";
 
@@ -42,125 +60,357 @@ export function LessonScreen() {
   const hasHydrated = useLanguageStore((state) => state.hasHydrated);
   const selectedLanguageId =
     useLanguageStore((state) => state.selectedLanguageId) ?? defaultLanguageId;
+  const trackId = useLanguageStore((state) => state.trackId) ?? defaultTrackId;
   const completedLessonIds = useProgressStore((state) => state.completedLessonIds);
   const [activeTab, setActiveTab] = useState<LessonTab>("lessons");
 
-  const lessonPath = useMemo(
-    () => getLessonPath(selectedLanguageId),
-    [selectedLanguageId],
-  );
+  // Lessons are scoped to the learner's chosen track (A1 / A2 / Travel), falling
+  // back to A1 if the picked track happens to have no content for this language.
+  const lessons = useMemo(() => {
+    const scoped = getTrackLessons(selectedLanguageId, trackId);
+    return scoped.length > 0 ? scoped : getTrackLessons(selectedLanguageId, "a1");
+  }, [selectedLanguageId, trackId]);
 
   if (!hasHydrated) {
     return <AppLoadingScreen message="Loading lessons..." />;
   }
 
   const contentWidth = Math.min(width, CONTENT_MAX_WIDTH);
-  // The card row sits inside the horizontal padding; the hero spans full width.
   const innerWidth = contentWidth - CONTENT_PADDING * 2;
 
-  if (lessonPath.lessons.length === 0) {
+  if (lessons.length === 0) {
     return <AppLoadingScreen message="No lessons available yet." />;
   }
 
-  const unit = lessonPath.unit;
-  const totalLessons = lessonPath.lessons.length;
-  const activeLessonIndex = lessonPath.lessons.findIndex(
+  const track = tracksById[trackId] ?? tracksById[defaultTrackId];
+  const languageName =
+    languages.find((language) => language.id === selectedLanguageId)?.name ?? "";
+  const totalLessons = lessons.length;
+  const activeLessonIndex = lessons.findIndex(
     (lesson) => !completedLessonIds.includes(lesson.id),
   );
-  const currentLesson =
-    activeLessonIndex === -1 ? totalLessons : activeLessonIndex + 1;
-  const heroTitle = unit?.title ?? "At the Café";
-  const heroSubtitle = `Unit ${(unit?.order ?? 2) + 1} • ${currentLesson} / ${totalLessons} lessons`;
+  const currentIndex = activeLessonIndex === -1 ? totalLessons - 1 : activeLessonIndex;
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView
-        className="flex-1 bg-background"
-        contentContainerStyle={[styles.scrollContent, { width: contentWidth }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <LessonHero
+      <View style={{ alignSelf: "center", width: contentWidth }}>
+        <View className="px-[18px] pb-3 pt-1">
+          <LessonTabs activeTab={activeTab} onChange={setActiveTab} width={innerWidth} />
+        </View>
+        {activeTab === "lessons" ? (
+          <SectionBanner languageName={languageName} track={track} />
+        ) : null}
+      </View>
+
+      {activeTab === "lessons" ? (
+        <LessonPath
+          activeLessonIndex={currentIndex}
+          completedLessonIds={completedLessonIds}
           contentWidth={contentWidth}
-          subtitle={heroSubtitle}
-          title={heroTitle}
+          languageId={selectedLanguageId}
+          lessons={lessons}
         />
-
-        {/* Floating segmented control overlapping the hero's bottom edge. */}
-        <View className="z-20 px-[18px]" style={{ marginTop: -SEGMENT_OVERLAP }}>
-          <LessonTabs
-            activeTab={activeTab}
-            onChange={setActiveTab}
-            width={innerWidth}
-          />
-        </View>
-
-        <View className="px-[18px]">
-          {activeTab === "lessons" ? (
-            <View className="mt-[20px]">
-              {lessonPath.lessons.map((lesson, index) => (
-                <LessonCard
-                  index={index}
-                  key={lesson.id}
-                  lesson={lesson}
-                  status={getLessonStatus(lesson.id, index, activeLessonIndex, completedLessonIds)}
-                />
-              ))}
-            </View>
-          ) : (
+      ) : (
+        <ScrollView
+          className="flex-1 bg-background"
+          contentContainerStyle={[styles.scrollContent, { width: contentWidth }]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View className="px-[18px]">
             <PracticeContent completedLessonIds={completedLessonIds} />
-          )}
-        </View>
-      </ScrollView>
+          </View>
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
 
-type LessonHeroProps = {
-  contentWidth: number;
-  subtitle: string;
-  title: string;
-};
+// ─── Section banner (slim, Duolingo-style) ──────────────────────────────────
 
-function LessonHero({ contentWidth, subtitle, title }: LessonHeroProps) {
+function SectionBanner({
+  languageName,
+  track,
+}: {
+  languageName: string;
+  track: Track;
+}) {
   return (
-    <View>
-      {/* Real header text stays crisp and reflects the selected language/unit. */}
-      <View className="flex-row items-center px-[18px] pt-[4px]">
-        <TouchableOpacity
-          activeOpacity={0.72}
-          accessibilityLabel="Go back"
-          accessibilityRole="button"
-          className="-ml-[4px] h-[40px] w-[40px] items-center justify-center"
-          onPress={() => router.back()}
-        >
-          <Ionicons color="#1B2340" name="chevron-back" size={28} />
-        </TouchableOpacity>
-
-        <Text
-          className="flex-1 text-center text-[26px] leading-[34px] font-poppins-bold text-text-primary"
-          numberOfLines={1}
-        >
-          {title}
-        </Text>
-
-        <View className="w-[40px] items-end justify-center">
-          <Ionicons color="#EBB733" name="bookmark" size={26} />
+    <View className="px-[18px]">
+      <View className="flex-row items-center rounded-[16px] px-5 py-3" style={styles.banner}>
+        <View className="flex-1">
+          <Text className="text-[11px] leading-[15px] font-poppins-bold uppercase tracking-[1.5px] text-[#D3C7FF]">
+            {languageName ? `${languageName} · ${track.shortLabel}` : track.shortLabel}
+          </Text>
+          <Text className="mt-0.5 text-[17px] leading-[23px] font-poppins-bold text-white" numberOfLines={1}>
+            {track.title}
+          </Text>
+        </View>
+        <View className="ml-3 h-[38px] w-[38px] items-center justify-center rounded-[11px] bg-[#7B62FF]">
+          <Ionicons color="#FFFFFF" name={track.icon as never} size={19} />
         </View>
       </View>
-
-      <Text className="mt-[2px] text-center text-[15px] leading-[21px] font-poppins-medium text-[#8E97B0]">
-        {subtitle}
-      </Text>
-
-      <Image
-        className="mt-[14px]"
-        resizeMode="cover"
-        source={images.lessonCafeScene}
-        style={{ width: contentWidth, aspectRatio: SCENE_ASPECT_RATIO }}
-      />
     </View>
   );
 }
+
+// ─── Lesson path ────────────────────────────────────────────────────────────
+
+function LessonPath({
+  lessons,
+  activeLessonIndex,
+  completedLessonIds,
+  contentWidth,
+  languageId,
+}: {
+  lessons: Lesson[];
+  activeLessonIndex: number;
+  completedLessonIds: string[];
+  contentWidth: number;
+  languageId: LanguageId;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+  const currentNodeRef = useRef<View>(null);
+  const didScrollRef = useRef(false);
+  // Only one node's callout card is open at a time, and nothing is open by
+  // default — the learner taps a node to reveal it, then taps START inside it.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Bring the active lesson node into view on open, so the learner never
+  // lands on a screen where the current lesson is scrolled out of sight.
+  function scrollToCurrent() {
+    if (didScrollRef.current) return;
+    const node = currentNodeRef.current;
+    const scroll = scrollRef.current as unknown as {
+      getScrollableNode?: () => number;
+      scrollTo: (opts: { y: number; animated: boolean }) => void;
+    } | null;
+    if (!node || !scroll?.getScrollableNode) return;
+    try {
+      node.measureLayout(
+        scroll.getScrollableNode(),
+        (_x: number, y: number) => {
+          didScrollRef.current = true;
+          scroll.scrollTo({ y: Math.max(0, y - 90), animated: false });
+        },
+        () => undefined,
+      );
+    } catch {
+      // measureLayout can throw before layout settles — safe to ignore.
+    }
+  }
+
+  // Only render what the learner has reached: completed lessons + the current
+  // one. Lessons further down the path aren't shown at all — no titles, no
+  // preview — matching Duolingo, where the path never spoils what's ahead.
+  const visibleLessons = lessons.slice(0, activeLessonIndex + 1);
+
+  // Precompute each node's sway offset up front (with the current node forced
+  // to 0) so the connector between two nodes can average them — otherwise the
+  // line jumps straight to the next node's offset and the path looks broken.
+  const offsets = visibleLessons.map((lesson, index) => {
+    const status = getLessonStatus(lesson.id, index, activeLessonIndex, completedLessonIds);
+    return status === "inProgress" ? 0 : SWAY[index % SWAY.length];
+  });
+
+  return (
+    <ScrollView
+      className="flex-1 bg-background"
+      contentContainerStyle={[styles.scrollContent, { width: contentWidth }]}
+      ref={scrollRef}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* Tapping empty space (not a node) closes whichever callout is open —
+          taps on a node itself are captured by its own touchable first. */}
+      <Pressable
+        className="mt-4 items-center px-[18px]"
+        onPress={() => setExpandedId(null)}
+      >
+        {visibleLessons.map((lesson, index) => {
+          const status = getLessonStatus(
+            lesson.id,
+            index,
+            activeLessonIndex,
+            completedLessonIds,
+          );
+          const isCurrent = status === "inProgress";
+          const connectorOffset =
+            index === 0 ? 0 : (offsets[index - 1] + offsets[index]) / 2;
+          const isLastVisible = index === visibleLessons.length - 1;
+          // The node icon's vertical center within this item, used to line the
+          // side decorations up with the node itself rather than the card below.
+          const nodeCenterY = (index === 0 ? 0 : 26) + 41;
+
+          return (
+            <View
+              key={lesson.id}
+              onLayout={isCurrent ? scrollToCurrent : undefined}
+              ref={isCurrent ? currentNodeRef : undefined}
+              style={{ width: "100%", alignItems: "center" }}
+            >
+              {index !== 0 ? (
+                <View style={{ transform: [{ translateX: connectorOffset }] }}>
+                  <View style={styles.connector} />
+                </View>
+              ) : null}
+
+              <LessonNode
+                index={index}
+                isExpanded={expandedId === lesson.id}
+                lesson={lesson}
+                offset={offsets[index]}
+                onStart={() => router.push(`/lesson/${lesson.id}/session` as Href)}
+                onToggleExpand={() =>
+                  setExpandedId((current) => (current === lesson.id ? null : lesson.id))
+                }
+                status={status}
+              />
+
+              {/* Staggered, not paired: the reference (duolingo-refs/Home.png)
+                  puts its treasure chest upper-left, level with the path node,
+                  and its owl lower-right, level with the callout further down
+                  — offset from each other, not mirrored on one line. Both sit
+                  loose in the scene (no card/badge chrome around them) and are
+                  sized close to the node itself, like the reference's chest. */}
+              {isLastVisible ? (
+                <>
+                  <Text
+                    style={{
+                      fontSize: 60,
+                      left: -8,
+                      position: "absolute",
+                      top: nodeCenterY - 38,
+                    }}
+                  >
+                    {LANGUAGE_PROPS[languageId]}
+                  </Text>
+                  <Image
+                    resizeMode="contain"
+                    source={images.mascotWelcome}
+                    style={[
+                      styles.mascotImage,
+                      { position: "absolute", right: -10, top: nodeCenterY + 95 },
+                    ]}
+                  />
+                </>
+              ) : null}
+            </View>
+          );
+        })}
+      </Pressable>
+    </ScrollView>
+  );
+}
+
+// A gentle left/right sway down the column so nodes read as a winding path.
+// The current node stays centered so its callout card sits cleanly beneath it.
+const SWAY = [0, 42, 60, 42, 0, -42, -60, -42];
+
+function LessonNode({
+  lesson,
+  index,
+  status,
+  offset,
+  isExpanded,
+  onToggleExpand,
+  onStart,
+}: {
+  lesson: Lesson;
+  index: number;
+  status: LessonStatus;
+  offset: number;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onStart: () => void;
+}) {
+  const isCurrent = status === "inProgress";
+  const isDone = status === "completed";
+  const isLocked = status === "notStarted";
+
+  const face = isDone ? GOLD : isCurrent ? PURPLE_LIGHT : LOCK;
+  const base = isDone ? GOLD_DEEP : isCurrent ? PURPLE_DEEP : LOCK_DEEP;
+  const iconName = isDone ? "checkmark-sharp" : "star";
+  const iconColor = isDone || isCurrent ? "#FFFFFF" : "#AEB4C6";
+
+  return (
+    <View className="items-center" style={{ transform: [{ translateX: offset }] }}>
+      {/* The glossy 3D "stone" node. Locked nodes don't respond to taps —
+          only the current lesson and completed ones (to replay) can open. */}
+      <TouchableOpacity
+        accessibilityLabel={
+          isLocked
+            ? `Lesson ${index + 1}: ${lesson.title} (locked)`
+            : `Lesson ${index + 1}: ${lesson.title}`
+        }
+        accessibilityRole="button"
+        activeOpacity={isLocked ? 1 : 0.85}
+        disabled={isLocked}
+        onPress={onToggleExpand}
+        style={styles.nodeWrap}
+      >
+        {isCurrent ? <View style={styles.nodeRing} /> : null}
+        <View style={[styles.nodeBase, { backgroundColor: base }]} />
+        <View style={[styles.nodeFace, { backgroundColor: face }]}>
+          <View style={styles.nodeGloss} />
+          <Ionicons color={iconColor} name={iconName} size={30} />
+        </View>
+      </TouchableOpacity>
+
+      {isExpanded && !isLocked ? (
+        <StartCard
+          index={index}
+          isReplay={isDone}
+          lesson={lesson}
+          onStart={onStart}
+        />
+      ) : (
+        <Text
+          className="mt-2 max-w-[150px] text-center text-[12px] leading-[16px] font-poppins-semibold text-[#9AA1B3]"
+          numberOfLines={2}
+        >
+          {lesson.title}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function StartCard({
+  lesson,
+  index,
+  isReplay,
+  onStart,
+}: {
+  lesson: Lesson;
+  index: number;
+  isReplay: boolean;
+  onStart: () => void;
+}) {
+  const level = lesson.pedagogy?.cefrLevel;
+  return (
+    <View className="mt-[14px] w-[86%]" style={styles.startCard}>
+      <View style={styles.startPointer} />
+      <Text className="text-[17px] leading-[22px] font-poppins-bold text-white" numberOfLines={1}>
+        {lesson.title}
+      </Text>
+      <Text className="mt-0.5 text-[12px] leading-[16px] font-poppins-medium text-[#D3C7FF]">
+        Lesson {index + 1}
+        {level ? ` · Level ${level}` : ""}
+      </Text>
+      <TouchableOpacity
+        accessibilityRole="button"
+        activeOpacity={0.9}
+        onPress={onStart}
+        style={styles.startButton}
+      >
+        <Text className="text-[15px] font-poppins-bold text-lingua-deep-purple">
+          {isReplay ? "PRACTICE AGAIN" : `START +${lesson.xpReward} XP`}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// ─── Tabs ───────────────────────────────────────────────────────────────────
 
 type LessonTabsProps = {
   activeTab: LessonTab;
@@ -183,7 +433,6 @@ function LessonTabs({ activeTab, onChange, width }: LessonTabsProps) {
     }).start();
   }, [activeTab, indicator]);
 
-  // A short bar centered under the active tab's label (not the full half-width).
   const indicatorWidth = Math.max(64, Math.round(tabWidth * 0.58));
   const baseOffset = (tabWidth - indicatorWidth) / 2;
   const translateX = indicator.interpolate({
@@ -193,7 +442,7 @@ function LessonTabs({ activeTab, onChange, width }: LessonTabsProps) {
 
   return (
     <View
-      className="flex-row overflow-hidden rounded-[23px] bg-white"
+      className="flex-row overflow-hidden rounded-[20px] bg-white"
       style={[styles.segmentedCard, styles.segmentedShadow]}
     >
       <TabButton
@@ -231,7 +480,7 @@ function TabButton({ isActive, label, onPress }: TabButtonProps) {
       onPress={onPress}
     >
       <Text
-        className={`text-[17px] leading-[23px] ${
+        className={`text-[16px] leading-[22px] ${
           isActive
             ? "font-poppins-semibold text-lingua-deep-purple"
             : "font-poppins-medium text-[#5E6785]"
@@ -242,6 +491,8 @@ function TabButton({ isActive, label, onPress }: TabButtonProps) {
     </TouchableOpacity>
   );
 }
+
+// ─── Practice tab (spaced-repetition review) ────────────────────────────────
 
 type PracticeContentProps = {
   completedLessonIds: string[];
@@ -333,9 +584,7 @@ function PracticeContent({ completedLessonIds }: PracticeContentProps) {
 
 function WeakSpotRow({ target }: { target: ReviewTarget }) {
   return (
-    <View
-      className="mb-[10px] flex-row items-center rounded-[15px] border border-[#F3E6E6] bg-[#FFF8F8] px-4 py-3"
-    >
+    <View className="mb-[10px] flex-row items-center rounded-[15px] border border-[#F3E6E6] bg-[#FFF8F8] px-4 py-3">
       <View className="h-[34px] w-[34px] items-center justify-center rounded-full bg-[#FDECEC]">
         <Ionicons color="#E0705A" name="alert-circle" size={18} />
       </View>
@@ -351,113 +600,7 @@ function WeakSpotRow({ target }: { target: ReviewTarget }) {
   );
 }
 
-type LessonCardProps = {
-  index: number;
-  lesson: Lesson;
-  status: LessonStatus;
-};
-
-function LessonCard({ index, lesson, status }: LessonCardProps) {
-  const isInProgress = status === "inProgress";
-  const cardMinHeight = isInProgress ? 98 : 80;
-
-  return (
-    <TouchableOpacity
-      activeOpacity={0.82}
-      accessibilityRole="button"
-      className={`mb-[8px] justify-center rounded-[17px] border bg-white px-[22px] py-[13px] ${
-        isInProgress
-          ? "border-[#9278FF] bg-[#FCFBFF]"
-          : "border-[#EEF1F7]"
-      }`}
-      onPress={() => router.push(`/lesson/${lesson.id}` as Href)}
-      style={[
-        isInProgress ? styles.activeLessonCard : styles.lessonCard,
-        { minHeight: cardMinHeight },
-      ]}
-      testID={`lesson-card-${lesson.id}`}
-    >
-      <View className="max-w-[78%]">
-        <Text
-          className={`text-[13px] leading-[18px] font-poppins-semibold ${
-            isInProgress ? "text-lingua-deep-purple" : "text-[#8790AA]"
-          }`}
-        >
-          Lesson {index + 1}
-        </Text>
-        <Text
-          className="mt-[6px] text-[16px] leading-[22px] font-poppins-semibold text-text-primary"
-          numberOfLines={1}
-        >
-          {lesson.title}
-        </Text>
-        <Text
-          className="mt-[3px] text-[12px] leading-[17px] font-poppins-regular text-[#727B96]"
-          numberOfLines={1}
-        >
-          {lesson.vocabulary.map((item) => item.term).join(" · ")}
-        </Text>
-        <LessonStatusText status={status} />
-      </View>
-
-      <View className="absolute right-[25px] top-0 bottom-0 items-center justify-center">
-        <LessonStatusMark lesson={lesson} status={status} />
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-type LessonStatusTextProps = {
-  status: LessonStatus;
-};
-
-function LessonStatusText({ status }: LessonStatusTextProps) {
-  if (status !== "inProgress") {
-    return null;
-  }
-
-  return (
-    <Text className="mt-[3px] text-[14px] leading-[19px] font-poppins-semibold text-lingua-deep-purple">
-      In progress
-    </Text>
-  );
-}
-
-type LessonStatusMarkProps = {
-  lesson: Lesson;
-  status: LessonStatus;
-};
-
-function LessonStatusMark({ lesson, status }: LessonStatusMarkProps) {
-  const imageSource = getLessonImageSource(lesson.imageKey);
-
-  if (status === "completed") {
-    return (
-      <View
-        className="h-[31px] w-[31px] items-center justify-center rounded-full bg-[#25C636]"
-        style={styles.completedMark}
-      >
-        <Text className="text-[20px] leading-[23px] font-poppins-bold text-white">
-          {"\u2713"}
-        </Text>
-      </View>
-    );
-  }
-
-  if (status === "inProgress") {
-    return (
-      <Image
-        className="h-[58px] w-[58px]"
-        resizeMode="contain"
-        source={imageSource}
-      />
-    );
-  }
-
-  // No locking for now: lessons that have not been started show no status mark,
-  // and every card remains tappable.
-  return null;
-}
+// ─── helpers ────────────────────────────────────────────────────────────────
 
 function getLessonStatus(
   lessonId: string,
@@ -466,72 +609,72 @@ function getLessonStatus(
   completedLessonIds: string[],
 ): LessonStatus {
   if (completedLessonIds.includes(lessonId)) return "completed";
-  if (activeLessonIndex !== -1 && index === activeLessonIndex) return "inProgress";
+  if (index === activeLessonIndex) return "inProgress";
   return "notStarted";
 }
 
-function getLessonPath(languageId: LanguageId) {
-  const languageUnits =
-    unitsByLanguageId[languageId] ?? unitsByLanguageId[defaultLanguageId] ?? [];
-  const unit =
-    [...languageUnits].sort(
-      (left, right) =>
-        right.lessonIds.length - left.lessonIds.length || left.order - right.order,
-    )[0] ?? null;
-  const unitLessons = getLessonsForUnit(unit, languageId);
-
-  if (unitLessons.length > 0) {
-    return {
-      languageId,
-      lessons: unitLessons,
-      unit,
-    };
-  }
-
-  const fallbackLessons = lessonsByLanguageId[defaultLanguageId] ?? [];
-  const fallbackUnit = (unitsByLanguageId[defaultLanguageId] ?? [])[0] ?? null;
-
-  return {
-    languageId: defaultLanguageId,
-    lessons: fallbackLessons,
-    unit: fallbackUnit,
-  };
-}
-
-function getLessonsForUnit(unit: LearningUnit | null, languageId: LanguageId) {
-  const unitLessons =
-    unit?.lessonIds
-      .map((lessonId) => lessonsById[lessonId])
-      .filter((lesson): lesson is Lesson => Boolean(lesson)) ?? [];
-
-  if (unitLessons.length > 0) {
-    return unitLessons;
-  }
-
-  return lessonsByLanguageId[languageId] ?? [];
-}
-
 const styles = StyleSheet.create({
-  activeLessonCard: {
-    elevation: 4,
-    shadowColor: "#6E48F6",
-    shadowOffset: { height: 4, width: 0 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-  },
-  completedMark: {
+  banner: {
+    backgroundColor: PURPLE,
     elevation: 3,
-    shadowColor: "#0A7F1F",
+    shadowColor: "#321d93",
     shadowOffset: { height: 3, width: 0 },
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
-  },
-  lessonCard: {
-    elevation: 2,
-    shadowColor: "#0D132B",
-    shadowOffset: { height: 3, width: 0 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.16,
     shadowRadius: 8,
+  },
+  connector: {
+    backgroundColor: "#E7E9F2",
+    borderRadius: 3,
+    height: 22,
+    marginVertical: 2,
+    width: 6,
+  },
+  mascotImage: {
+    height: 110,
+    width: 110,
+  },
+  nodeBase: {
+    // No `left` here on purpose — the parent's alignItems:"center" centers this
+    // absolutely-positioned layer horizontally, same as nodeFace. A hardcoded
+    // left:0 previously pinned it to the wrap's left edge instead, making the
+    // "3D depth" base peek out diagonally to the upper-left instead of cleanly
+    // from underneath.
+    borderRadius: 40,
+    height: 74,
+    position: "absolute",
+    top: 8,
+    width: 74,
+  },
+  nodeFace: {
+    alignItems: "center",
+    borderRadius: 40,
+    height: 74,
+    justifyContent: "center",
+    overflow: "hidden",
+    width: 74,
+  },
+  nodeGloss: {
+    backgroundColor: "rgba(255,255,255,0.30)",
+    borderRadius: 20,
+    height: 16,
+    position: "absolute",
+    top: 11,
+    width: 38,
+  },
+  nodeRing: {
+    borderColor: "rgba(91,59,246,0.22)",
+    borderRadius: 47,
+    borderWidth: 5,
+    height: 94,
+    position: "absolute",
+    top: -3,
+    width: 94,
+  },
+  nodeWrap: {
+    alignItems: "center",
+    height: 82,
+    justifyContent: "flex-start",
+    width: 94,
   },
   reviewCardShadow: {
     elevation: 8,
@@ -546,17 +689,49 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     alignSelf: "center",
-    paddingBottom: 118,
+    paddingBottom: 140,
     paddingTop: 0,
   },
   segmentedCard: {
-    height: 74,
+    height: 52,
   },
   segmentedShadow: {
-    elevation: 8,
+    elevation: 6,
     shadowColor: "#1B2340",
-    shadowOffset: { height: 8, width: 0 },
+    shadowOffset: { height: 6, width: 0 },
     shadowOpacity: 0.08,
-    shadowRadius: 18,
+    shadowRadius: 14,
+  },
+  startButton: {
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 3,
+    borderColor: "#E3E3EA",
+    borderRadius: 14,
+    justifyContent: "center",
+    marginTop: 14,
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+  },
+  startCard: {
+    backgroundColor: PURPLE,
+    borderRadius: 18,
+    elevation: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    shadowColor: "#321d93",
+    shadowOffset: { height: 6, width: 0 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+  },
+  startPointer: {
+    backgroundColor: PURPLE,
+    height: 16,
+    left: "50%",
+    marginLeft: -8,
+    position: "absolute",
+    top: -7,
+    transform: [{ rotate: "45deg" }],
+    width: 16,
   },
 });

@@ -1,25 +1,25 @@
 import { useAuth } from "@clerk/expo";
-import { Link, Redirect } from "expo-router";
+import { Link, Redirect, type Href } from "expo-router";
 import { Image, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppLoadingScreen } from "@/components/ui/app-loading-screen";
 import { images } from "@/constants/images";
-import { useLanguageStore } from "@/store/language-store";
+import { selectOnboardingHref, useLanguageStore } from "@/store/language-store";
 
 export default function OnboardingScreen() {
   const { isLoaded, isSignedIn } = useAuth();
 
-  const selectedLanguageId = useLanguageStore((state) => state.selectedLanguageId);
   const hasHydrated = useLanguageStore((state) => state.hasHydrated);
+  const onboardingHref = useLanguageStore(selectOnboardingHref);
 
   if (!isLoaded) {
     return <AppLoadingScreen message="Loading sign in..." />;
   }
 
   if (isSignedIn && hasHydrated) {
-    const hasSelectedLanguage = selectedLanguageId !== null;
-    return <Redirect href={hasSelectedLanguage ? "/" : "/language-selection"} />;
+    // Send them to the first onboarding step they still need, or home if done.
+    return <Redirect href={(onboardingHref ?? "/") as Href} />;
   }
 
   return (

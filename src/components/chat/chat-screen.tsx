@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import {
     FlatList,
     Keyboard,
-    KeyboardAvoidingView,
     Platform,
     StyleSheet,
     Text,
@@ -32,13 +31,18 @@ type Message = {
   role: "assistant" | "user";
 };
 
+// Tells the learner, up front, that they can always ask Duo how to say
+// something instead of guessing — the chat's main escape hatch when stuck.
+const HELP_HINT =
+  "If you're ever not sure how to reply, just ask me — like \"how do I say ___?\" — and I'll tell you.";
+
 const welcomeMessages = {
-  chinese: "你好！(Hello!) I'm Duo. What would you like to practice in Mandarin today?",
-  french: "Bonjour ! (Hello!) I'm Duo. What would you like to practice in French today?",
-  german: "Hallo! (Hello!) I'm Duo. What would you like to practice in German today?",
-  japanese: "こんにちは！(Hello!) I'm Duo. What would you like to practice in Japanese today?",
-  korean: "안녕하세요! (Hello!) I'm Duo. What would you like to practice in Korean today?",
-  spanish: "¡Hola! (Hello!) I'm Duo. What would you like to practice in Spanish today?",
+  chinese: `你好！(Hello!) I'm Duo. ${HELP_HINT} What would you like to practice in Mandarin today?`,
+  french: `Bonjour ! (Hello!) I'm Duo. ${HELP_HINT} What would you like to practice in French today?`,
+  german: `Hallo! (Hello!) I'm Duo. ${HELP_HINT} What would you like to practice in German today?`,
+  japanese: `こんにちは！(Hello!) I'm Duo. ${HELP_HINT} What would you like to practice in Japanese today?`,
+  korean: `안녕하세요! (Hello!) I'm Duo. ${HELP_HINT} What would you like to practice in Korean today?`,
+  spanish: `¡Hola! (Hello!) I'm Duo. ${HELP_HINT} What would you like to practice in Spanish today?`,
 } as const;
 
 function makeId(): string {
@@ -49,6 +53,7 @@ export function ChatScreen() {
   const { getToken } = useAuth();
   const selectedLanguageId =
     useLanguageStore((state) => state.selectedLanguageId) ?? defaultLanguageId;
+  const nativeLanguageId = useLanguageStore((state) => state.nativeLanguageId);
   const completedLessonIds = useProgressStore((state) => state.completedLessonIds);
   const reviewProgress = useProgressStore((state) => state.reviewProgress);
   const [messages, setMessages] = useState<Message[]>(() => [
@@ -57,7 +62,14 @@ export function ChatScreen() {
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
-  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  // The exact keyboard height reported by the OS. We push the input row up by
+  // this amount ourselves instead of relying on KeyboardAvoidingView, which is
+  // unreliable on Android with edge-to-edge + adjustResize (a known combo where
+  // the window doesn't actually resize, leaving the input hidden behind the
+  // keyboard). Deriving the real height from the show/hide events works
+  // regardless of that native resize behavior.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const isKeyboardOpen = keyboardHeight > 0;
   const flatListRef = useRef<FlatList<Message>>(null);
 
   useEffect(() => {
@@ -65,19 +77,15 @@ export function ChatScreen() {
     setErrorText(null);
   }, [selectedLanguageId]);
 
-  // The tab bar hides on keyboard open, so collapse the input's bottom clearance
-  // to avoid a large empty gap above the keyboard while typing.
   useEffect(() => {
     const showEvent =
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent =
       Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-    const showSub = Keyboard.addListener(showEvent, () =>
-      setIsKeyboardOpen(true),
+    const showSub = Keyboard.addListener(showEvent, (event) =>
+      setKeyboardHeight(event.endCoordinates.height),
     );
-    const hideSub = Keyboard.addListener(hideEvent, () =>
-      setIsKeyboardOpen(false),
-    );
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
 
     return () => {
       showSub.remove();
@@ -132,6 +140,7 @@ export function ChatScreen() {
         "/api/chat",
         {
           languageId: selectedLanguageId,
+          nativeLanguageId: nativeLanguageId ?? "english",
           messages: historyMessages,
           personalization: {
             learnedChunks: personalizationSnapshot.learnedChunks,
@@ -172,31 +181,32 @@ export function ChatScreen() {
         </View>
       </View>
 
-      <FlatList
-        ref={flatListRef}
-        className="flex-1 px-4"
-        contentContainerStyle={styles.messageList}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        onContentSizeChange={() =>
-          flatListRef.current?.scrollToEnd({ animated: true })
-        }
-        renderItem={({ item }) => <MessageBubble message={item} />}
-        showsVerticalScrollIndicator={false}
-      />
+      {/* Wraps the message list + input so the whole body shrinks and the input
+          rides above the keyboard (WhatsApp-style). Pushed up by the real
+          reported keyboard height instead of KeyboardAvoidingView, which is
+          unreliable on Android with edge-to-edge + adjustResize. */}
+      <View className="flex-1" style={{ paddingBottom: keyboardHeight }}>
+        <FlatList
+          ref={flatListRef}
+          className="flex-1 px-4"
+          contentContainerStyle={styles.messageList}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          onContentSizeChange={() =>
+            flatListRef.current?.scrollToEnd({ animated: true })
+          }
+          renderItem={({ item }) => <MessageBubble message={item} />}
+          showsVerticalScrollIndicator={false}
+        />
 
-      {errorText ? (
-        <View className="mx-4 mb-2 rounded-[12px] bg-[#FFF0F0] px-4 py-3">
-          <Text className="text-[13px] leading-[19px] font-poppins-regular text-[#D14343]">
-            {errorText}
-          </Text>
-        </View>
-      ) : null}
+        {errorText ? (
+          <View className="mx-4 mb-2 rounded-[12px] bg-[#FFF0F0] px-4 py-3">
+            <Text className="text-[13px] leading-[19px] font-poppins-regular text-[#D14343]">
+              {errorText}
+            </Text>
+          </View>
+        ) : null}
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={0}
-      >
         <View
           style={[
             styles.inputRow,
@@ -238,7 +248,7 @@ export function ChatScreen() {
             )}
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </SafeAreaView>
   );
 }
