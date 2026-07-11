@@ -1,7 +1,7 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useUser } from "@clerk/expo";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import {
   Image,
   type ImageSourcePropType,
@@ -19,8 +19,8 @@ import { AppLoadingScreen } from "@/components/ui/app-loading-screen";
 import { DailyRewardModal } from "@/components/rewards/daily-reward-modal";
 import { images } from "@/constants/images";
 import { defaultLanguageId, languages } from "@/data/languages";
-import { lessons } from "@/data/lessons";
-import { units } from "@/data/units";
+import { defaultTrackId, tracksById } from "@/data/tracks";
+import { getTrackLessons } from "@/lib/tracks";
 import { useLanguageStore } from "@/store/language-store";
 import {
   DAILY_GOAL_XP,
@@ -56,7 +56,9 @@ export function HomeScreen() {
   const hasHydrated = useLanguageStore((state) => state.hasHydrated);
   const selectedLanguageId =
     useLanguageStore((state) => state.selectedLanguageId) ?? defaultLanguageId;
+  const trackId = useLanguageStore((state) => state.trackId) ?? defaultTrackId;
   const progressHydrated = useProgressStore((state) => state.hasHydrated);
+  const completedLessonIds = useProgressStore((state) => state.completedLessonIds);
   const streak = useProgressStore((state) => state.streak);
   const dailyXp = useProgressStore((state) => state.dailyXp);
   const recordActivity = useProgressStore((state) => state.recordActivity);
@@ -93,20 +95,16 @@ export function HomeScreen() {
     languages.find((language) => language.id === selectedLanguageId) ??
     languages.find((language) => language.id === defaultLanguageId) ??
     languages[0];
-  const languageLessons = lessons.filter(
-    (lesson) => lesson.languageId === selectedLanguage.id,
-  );
-  const visibleLessons =
-    languageLessons.length > 0
-      ? languageLessons
-      : lessons.filter((lesson) => lesson.languageId === defaultLanguageId);
+  const track = tracksById[trackId] ?? tracksById[defaultTrackId];
+  const trackLessons = getTrackLessons(selectedLanguage.id, trackId);
+  const pathLessons =
+    trackLessons.length > 0
+      ? trackLessons
+      : getTrackLessons(selectedLanguage.id, "a1");
+  // The next lesson to do = the first one the learner hasn't finished yet.
   const currentLesson: Lesson | null =
-    visibleLessons[1] ?? visibleLessons[0] ?? null;
-  const currentUnit =
-    (currentLesson
-      ? units.find((unit) => unit.id === currentLesson.unitId)
-      : null) ??
-    units.find((unit) => unit.languageId === selectedLanguage.id) ??
+    pathLessons.find((lesson) => !completedLessonIds.includes(lesson.id)) ??
+    pathLessons[0] ??
     null;
   const earnedXp = Math.min(dailyXp, DAILY_GOAL_XP);
   const progress = DAILY_GOAL_XP > 0 ? earnedXp / DAILY_GOAL_XP : 0;
@@ -116,7 +114,14 @@ export function HomeScreen() {
     user?.primaryEmailAddress?.emailAddress.split("@")[0] ??
     "Alex";
   const contentWidth = Math.min(Math.max(width - 30, 0), CONTENT_MAX_WIDTH);
-  const unitLabel = `A1 · Unit ${Math.max((currentUnit?.order ?? 2) + 1, 3)}`;
+  const unitLabel = track.title;
+  const startCurrentLesson = () => {
+    if (currentLesson) {
+      router.push(`/lesson/${currentLesson.id}/session` as Href);
+    } else {
+      router.navigate("/(tabs)/learn");
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -162,7 +167,7 @@ export function HomeScreen() {
 
         <ContinueLearningCard
           languageName={selectedLanguage.name}
-          onPress={() => router.navigate("/(tabs)/learn")}
+          onPress={startCurrentLesson}
           unitLabel={unitLabel}
         />
 
@@ -182,15 +187,20 @@ export function HomeScreen() {
 
         <View className="mt-2">
           <PlanItem
+            completed={
+              currentLesson
+                ? completedLessonIds.includes(currentLesson.id)
+                : false
+            }
             iconType="book"
             title="Lesson"
             subtitle={getLessonPlanSubtitle(currentLesson)}
-            onPress={() => router.navigate("/(tabs)/learn")}
+            onPress={startCurrentLesson}
           />
           <PlanItem
             iconType="headphones"
             title="AI Conversation"
-            subtitle="Talk about your day"
+            subtitle="Speak with Duo out loud"
             onPress={() => router.navigate("/(tabs)/ai-teacher")}
           />
           <PlanItem
@@ -353,35 +363,19 @@ function PlanItem({
         </Text>
       </View>
 
-      <View
-        className={
-          completed
-            ? "h-[26px] w-[26px] items-center justify-center rounded-full bg-lingua-deep-purple"
-            : "h-[26px] w-[26px] rounded-full border-[2px] border-[#8990a9]"
-        }
-      >
-        {completed ? (
-          <Text className="text-[15px] leading-[18px] font-poppins-semibold text-white">
-            {"✓"}
-          </Text>
-        ) : null}
-      </View>
+      {completed ? (
+        <View className="h-[26px] w-[26px] items-center justify-center rounded-full bg-[#21C16B]">
+          <Ionicons color="#FFFFFF" name="checkmark" size={16} />
+        </View>
+      ) : (
+        <Ionicons color="#C6CBDA" name="chevron-forward" size={20} />
+      )}
     </TouchableOpacity>
   );
 }
 
 function getLessonPlanSubtitle(lesson: Lesson | null) {
-  if (!lesson) {
-    return "No lesson available";
-  }
-
-  const unitTitle = units.find((unit) => unit.id === lesson.unitId)?.title;
-
-  if (unitTitle?.toLowerCase().includes("cafe")) {
-    return "At the café";
-  }
-
-  return lesson.title;
+  return lesson?.title ?? "No lesson available";
 }
 
 function PlanIcon({ type }: { type: "book" | "chat" | "headphones" }) {

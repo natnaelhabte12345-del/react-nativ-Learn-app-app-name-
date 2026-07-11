@@ -79,6 +79,7 @@ export const units = [
       "german-shopping",
       "german-family-friends",
       "german-numbers-prices",
+      "german-time",
       "german-restaurant",
       "german-getting-around",
       "german-small-talk",

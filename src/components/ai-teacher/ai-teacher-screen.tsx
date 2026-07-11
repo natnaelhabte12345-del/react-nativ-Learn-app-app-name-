@@ -6,7 +6,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AppLoadingScreen } from "@/components/ui/app-loading-screen";
 import { getLessonImageSource, images } from "@/constants/images";
 import { defaultLanguageId } from "@/data/languages";
-import { lessonsByLanguageId } from "@/data/lessons";
+import { defaultTrackId } from "@/data/tracks";
+import { getTrackLessons } from "@/lib/tracks";
 import { useLanguageStore } from "@/store/language-store";
 import { useProgressStore } from "@/store/progress-store";
 import type { Lesson } from "@/types/learning";
@@ -15,19 +16,22 @@ export function AiTeacherScreen() {
   const hasHydrated = useLanguageStore((state) => state.hasHydrated);
   const selectedLanguageId =
     useLanguageStore((state) => state.selectedLanguageId) ?? defaultLanguageId;
+  const trackId = useLanguageStore((state) => state.trackId) ?? defaultTrackId;
   const completedLessonIds = useProgressStore((state) => state.completedLessonIds);
 
   if (!hasHydrated) return <AppLoadingScreen message="Loading..." />;
 
-  const languageLessons =
-    lessonsByLanguageId[selectedLanguageId] ??
-    lessonsByLanguageId[defaultLanguageId] ??
-    [];
+  // Same track-scoped list and progress gating as the Learn path, so a topic
+  // only becomes available here once the learner has actually reached it there.
+  const scoped = getTrackLessons(selectedLanguageId, trackId);
+  const trackLessons = scoped.length > 0 ? scoped : getTrackLessons(selectedLanguageId, "a1");
 
-  const nextLessonIndex = languageLessons.findIndex(
+  const nextLessonIndex = trackLessons.findIndex(
     (l) => !completedLessonIds.includes(l.id),
   );
-  const nextLesson = nextLessonIndex >= 0 ? languageLessons[nextLessonIndex] : null;
+  const nextLesson = nextLessonIndex >= 0 ? trackLessons[nextLessonIndex] : null;
+  // A topic is reachable once it's completed or it's the very next one up.
+  const reachableCount = nextLessonIndex === -1 ? trackLessons.length : nextLessonIndex + 1;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -47,9 +51,10 @@ export function AiTeacherScreen() {
           />
         </View>
 
-        <View className="mt-3 rounded-[18px] bg-[#F4F0FF] px-5 py-4">
-          <Text className="text-[14px] leading-[22px] font-poppins-regular text-[#5B3BF6]">
-            Practice speaking about real topics with Duo, your AI teacher. Each lesson is a short voice conversation — this is where vocabulary becomes actual language.
+        <View className="mt-3 flex-row items-center rounded-[18px] bg-[#F4F0FF] px-5 py-4">
+          <Ionicons color="#5B3BF6" name="mic" size={22} />
+          <Text className="ml-3 flex-1 text-[14px] leading-[21px] font-poppins-regular text-[#5B3BF6]">
+            Learned the words in Lessons? This is where you actually speak them. Have a real voice conversation with Duo — no tapping, just talking.
           </Text>
         </View>
 
@@ -66,10 +71,13 @@ export function AiTeacherScreen() {
           <Text className="mb-3 text-[17px] leading-[23px] font-poppins-semibold text-text-primary">
             All topics
           </Text>
-          {languageLessons.map((lesson) => (
+          {/* Only topics the learner has reached (completed + the current one)
+              are listed — topics further out aren't shown at all, matching the
+              Learn path (no spoiling what's still locked). */}
+          {trackLessons.slice(0, reachableCount).map((lesson) => (
             <TopicCard
-              key={lesson.id}
               isCompleted={completedLessonIds.includes(lesson.id)}
+              key={lesson.id}
               lesson={lesson}
             />
           ))}
@@ -114,6 +122,7 @@ type TopicCardProps = {
 function TopicCard({ isCompleted, lesson }: TopicCardProps) {
   return (
     <TouchableOpacity
+      accessibilityLabel={lesson.title}
       activeOpacity={0.82}
       className="mb-3 flex-row items-center rounded-[16px] border border-[#EEF1F7] bg-white px-4 py-4"
       onPress={() => router.push(`/lesson/${lesson.id}/audio` as Href)}

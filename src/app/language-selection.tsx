@@ -34,6 +34,7 @@ export default function LanguageSelectionScreen() {
   const setSelectedLanguage = useLanguageStore(
     (state) => state.setSelectedLanguage,
   );
+  const trackId = useLanguageStore((state) => state.trackId);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLanguageId, setSelectedLanguageId] =
     useState<LanguageId | null>(null);
@@ -64,7 +65,9 @@ export default function LanguageSelectionScreen() {
     }
     setSelectedLanguageId(languageId);
     setSelectedLanguage(languageId);
-    router.replace(homeHref);
+    // During first-run onboarding, continue to the track step; when changing
+    // language later (track already chosen) go straight back home.
+    router.replace(trackId ? homeHref : ("/track-selection" as Href));
   };
 
   if (!isLoaded || !hasHydrated) {

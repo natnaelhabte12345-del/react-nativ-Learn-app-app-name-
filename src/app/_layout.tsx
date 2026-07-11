@@ -14,7 +14,7 @@ import { Text, View } from "react-native";
 import "../../global.css";
 
 import { AppLoadingScreen } from "@/components/ui/app-loading-screen";
-import { useLanguageStore } from "@/store/language-store";
+import { selectOnboardingHref, useLanguageStore } from "@/store/language-store";
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
 const posthogKey = process.env.EXPO_PUBLIC_POSTHOG_KEY ?? "";
@@ -110,9 +110,9 @@ function AuthRedirects() {
   const { isLoaded, isSignedIn } = useAuth();
   const pathname = usePathname();
   const hasHydrated = useLanguageStore((state) => state.hasHydrated);
-  const selectedLanguageId = useLanguageStore(
-    (state) => state.selectedLanguageId,
-  );
+  // The next onboarding step still needed (native → target → track), or null
+  // once the learner has completed all three.
+  const onboardingHref = useLanguageStore(selectOnboardingHref);
 
   useEffect(() => {
     if (!isLoaded || !hasHydrated) {
@@ -122,8 +122,6 @@ function AuthRedirects() {
     const isAuthRoute = pathname === "/sign-in" || pathname === "/sign-up";
     const isOnboardingRoute = pathname === "/onboarding";
     const isOAuthCallbackRoute = pathname === "/oauth-callback";
-    const isLanguageSelectionRoute = pathname === "/language-selection";
-    const hasSelectedLanguage = selectedLanguageId !== null;
 
     if (
       !isSignedIn &&
@@ -136,19 +134,21 @@ function AuthRedirects() {
     }
 
     if (isSignedIn && (isAuthRoute || isOnboardingRoute)) {
-      router.replace(hasSelectedLanguage ? homeHref : "/language-selection");
+      router.replace((onboardingHref ?? homeHref) as Href);
       return;
     }
 
+    // Keep signed-in users on the correct next onboarding step until all three
+    // choices are made, without bouncing them off the step they're already on.
     if (
       isSignedIn &&
-      !hasSelectedLanguage &&
-      !isLanguageSelectionRoute &&
+      onboardingHref &&
+      pathname !== onboardingHref &&
       !isOAuthCallbackRoute
     ) {
-      router.replace("/language-selection");
+      router.replace(onboardingHref as Href);
     }
-  }, [hasHydrated, isLoaded, isSignedIn, pathname, selectedLanguageId]);
+  }, [hasHydrated, isLoaded, isSignedIn, pathname, onboardingHref]);
 
   return null;
 }
@@ -160,9 +160,7 @@ function PostHogScreenTracker() {
   const posthog = usePostHog();
   const lastTrackedScreen = useRef<string | null>(null);
   const hasHydrated = useLanguageStore((state) => state.hasHydrated);
-  const selectedLanguageId = useLanguageStore(
-    (state) => state.selectedLanguageId,
-  );
+  const onboardingHref = useLanguageStore(selectOnboardingHref);
 
   // Memoize screen properties to avoid unnecessary analytics events from
   // recreating the object on every render. The screenKey only changes when
@@ -181,7 +179,7 @@ function PostHogScreenTracker() {
     if (
       !isLoaded ||
       !hasHydrated ||
-      !shouldTrackScreen(pathname, isSignedIn === true, selectedLanguageId)
+      !shouldTrackScreen(pathname, isSignedIn === true, onboardingHref === null)
     ) {
       return;
     }
@@ -201,21 +199,26 @@ function PostHogScreenTracker() {
     screenProperties,
     pathname,
     posthog,
-    selectedLanguageId,
+    onboardingHref,
   ]);
 
   return null;
 }
 
+const ONBOARDING_SELECTION_ROUTES = [
+  "/native-language",
+  "/language-selection",
+  "/track-selection",
+];
+
 function shouldTrackScreen(
   pathname: string,
   isSignedIn: boolean,
-  selectedLanguageId: string | null,
+  onboardingComplete: boolean,
 ) {
   const isAuthRoute = pathname === "/sign-in" || pathname === "/sign-up";
   const isOnboardingRoute = pathname === "/onboarding";
   const isOAuthCallbackRoute = pathname === "/oauth-callback";
-  const isLanguageSelectionRoute = pathname === "/language-selection";
 
   if (!isSignedIn) {
     return isAuthRoute || isOnboardingRoute || isOAuthCallbackRoute;
@@ -225,8 +228,8 @@ function shouldTrackScreen(
     return false;
   }
 
-  if (!selectedLanguageId) {
-    return isLanguageSelectionRoute || isOAuthCallbackRoute;
+  if (!onboardingComplete) {
+    return ONBOARDING_SELECTION_ROUTES.includes(pathname) || isOAuthCallbackRoute;
   }
 
   return true;

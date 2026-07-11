@@ -11,6 +11,7 @@ import { usePostHog } from "posthog-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   PermissionsAndroid,
   Platform,
@@ -36,6 +37,7 @@ import {
   type StreamAudioAgentSession,
   type StreamAudioCallSession,
 } from "@/lib/stream-audio";
+import { makeReviewId } from "@/lib/learning-review";
 import { useProgressStore } from "@/store/progress-store";
 import type { Lesson } from "@/types/learning";
 
@@ -67,11 +69,10 @@ const AGENT_OPENING_HEAD_START_MS = 900;
 const AGENT_JOIN_TIMEOUT_MS = 10_000;
 // Treat caption segments arriving within this window as one spoken turn.
 const LEARNER_TURN_DEBOUNCE_MS = 2500;
-// Engagement gates for awarding XP at the end of the lesson. The lesson is the
-// AI-led conversation, so completion is the learner hanging up after Duo wraps
-// up — not a fixed number of spoken words. We just require a real session.
+// Engagement threshold for the "wrap it up" hint shown in the UI. Actual XP
+// completion is gated separately, by Duo's own wrap-up signal (see
+// lessonWrappedUpRef) — not by turn count, which is too easy to game.
 const MIN_TURNS_FOR_XP = 3;
-const MIN_SECONDS_FOR_XP = 60;
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -85,6 +86,7 @@ export default function AudioLessonScreen() {
   const posthog = usePostHog();
   const completeLesson = useProgressStore((state) => state.completeLesson);
   const recordActivity = useProgressStore((state) => state.recordActivity);
+  const recordReviewResult = useProgressStore((state) => state.recordReviewResult);
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [callPhase, setCallPhase] = useState<CallPhase>("idle");
@@ -109,6 +111,19 @@ export default function AudioLessonScreen() {
   // Whether the agent ever reached "connected". The end-of-call XP fallback uses
   // this so a learner who actually did the lesson always gets their reward.
   const hasConnectedRef = useRef(false);
+  // True once Duo's own captions signal the lesson wrap-up (both prompt variants
+  // are instructed to say "hang up" in that closing line). This — not a generic
+  // turns/time heuristic — is what actually gates XP and skipping the "leave
+  // early?" confirmation, since neither turn count nor elapsed time tells us
+  // whether the learner really finished.
+  const lessonWrappedUpRef = useRef(false);
+  // Everything Duo has said this session, used only to pull the specific
+  // chunks it names as needing more practice in the wrap-up (see
+  // extractStruggledChunkIds). Cleared implicitly on unmount with the rest of
+  // this screen's refs.
+  const agentTranscriptRef = useRef("");
+  // Guards against double-recording if the wrap-up caption fires more than once.
+  const struggledChunksAppliedRef = useRef(false);
 
   // ── Refs ───────────────────────────────────────────────────────────────────
   const clientRef = useRef<StreamVideoClient | null>(null);
@@ -240,6 +255,9 @@ export default function AudioLessonScreen() {
     hasAwardedXpRef.current = false;
     lastLearnerTurnRef.current = 0;
     hasConnectedRef.current = false;
+    lessonWrappedUpRef.current = false;
+    agentTranscriptRef.current = "";
+    struggledChunksAppliedRef.current = false;
     setCallPhase("creating");
     setAgentStatus("idle");
     setErrorMessage(null);
@@ -282,10 +300,29 @@ export default function AudioLessonScreen() {
             .toLowerCase()
             .includes("duo");
 
-          // We only track the learner's own speech. Duo's captions used to drive
-          // the practice target by keyword matching, but that was unreliable —
-          // it stuck on the first word and never reached completion.
-          if (isAgent) return;
+          // We don't drive the practice target from Duo's captions (keyword
+          // matching was unreliable — it stuck on the first word). We do still
+          // watch for the wrap-up cue so we know the lesson genuinely finished,
+          // and pull out any chunks Duo names as still needing practice.
+          if (isAgent) {
+            agentTranscriptRef.current += ` ${String(cc.text)}`;
+            const lowerText = String(cc.text).toLowerCase();
+
+            if (lowerText.includes("hang up")) {
+              lessonWrappedUpRef.current = true;
+            }
+
+            if (!struggledChunksAppliedRef.current && lesson) {
+              const struggledIds = extractStruggledChunkIds(agentTranscriptRef.current, lesson);
+              if (struggledIds.length > 0) {
+                struggledChunksAppliedRef.current = true;
+                for (const reviewId of struggledIds) {
+                  recordReviewResult(reviewId, false);
+                }
+              }
+            }
+            return;
+          }
 
           setRecognizedSpeech(String(cc.text));
 
@@ -363,7 +400,7 @@ export default function AudioLessonScreen() {
     } finally {
       isStartingRef.current = false;
     }
-  }, [lesson, getToken, cleanup]);
+  }, [lesson, getToken, cleanup, recordReviewResult]);
 
   // Auto-start once on mount
   useEffect(() => {
@@ -373,43 +410,60 @@ export default function AudioLessonScreen() {
   }, [lesson, handleStartLesson]);
 
   // ── End call ───────────────────────────────────────────────────────────────
-  // The lesson is the AI-led conversation; "finished" is the learner ending the
-  // call after Duo has wrapped up. We award XP here (once) as long as it was a
-  // real session — Duo actually connected and the learner either spoke a few
-  // turns or stayed long enough to work through the lesson. This replaces the
-  // old "completed after N words" heuristic that fired mid-lesson.
-  const handleEndCall = useCallback(async () => {
-    const elapsedSeconds = lessonStartTimeRef.current
-      ? (Date.now() - lessonStartTimeRef.current) / 1000
-      : 0;
-    const didRealSession =
-      hasConnectedRef.current &&
-      (spokenTurns >= MIN_TURNS_FOR_XP || elapsedSeconds >= MIN_SECONDS_FOR_XP);
+  // "Finished" means Duo actually wrapped the lesson up (signaled by its own
+  // closing line, see lessonWrappedUpRef) — not just "spoke a few times" or
+  // "stayed a minute," which used to award XP for leaving right away.
+  const finishAndExit = useCallback(
+    async (awardXp: boolean) => {
+      const justCompleted = Boolean(lesson && !hasAwardedXpRef.current && awardXp);
+      if (lesson && justCompleted) {
+        hasAwardedXpRef.current = true;
+        lessonCompletedRef.current = true;
+        // recordActivity first so daily-XP resets before completeLesson adds the reward.
+        recordActivity();
+        completeLesson(lesson.id, lesson.xpReward);
+        trackLessonCompleted(posthog, {
+          lesson_id: lesson.id,
+          language: lesson.languageId,
+          spoken_turns: spokenTurns,
+          xp_reward: lesson.xpReward,
+        });
+      }
+      setCallPhase("ending");
+      await cleanup({ resetState: false });
+      // After a real lesson, send the learner into personalized practice that
+      // reinforces exactly what they just heard (plus anything now due for review).
+      if (lesson && justCompleted) {
+        router.replace(`/practice?lessonId=${lesson.id}` as Href);
+      } else {
+        router.back();
+      }
+    },
+    [cleanup, lesson, spokenTurns, completeLesson, recordActivity, posthog],
+  );
 
-    const justCompleted = Boolean(lesson && !hasAwardedXpRef.current && didRealSession);
-    if (lesson && justCompleted) {
-      hasAwardedXpRef.current = true;
-      lessonCompletedRef.current = true;
-      // recordActivity first so daily-XP resets before completeLesson adds the reward.
-      recordActivity();
-      completeLesson(lesson.id, lesson.xpReward);
-      trackLessonCompleted(posthog, {
-        lesson_id: lesson.id,
-        language: lesson.languageId,
-        spoken_turns: spokenTurns,
-        xp_reward: lesson.xpReward,
-      });
+  const handleEndCall = useCallback(() => {
+    if (lessonWrappedUpRef.current) {
+      void finishAndExit(true);
+      return;
     }
-    setCallPhase("ending");
-    await cleanup({ resetState: false });
-    // After a real lesson, send the learner into personalized practice that
-    // reinforces exactly what they just heard (plus anything now due for review).
-    if (lesson && justCompleted) {
-      router.replace(`/practice?lessonId=${lesson.id}` as Href);
-    } else {
-      router.back();
-    }
-  }, [cleanup, lesson, spokenTurns, completeLesson, recordActivity, posthog]);
+
+    // Duo hasn't wrapped up yet — confirm before throwing away progress and
+    // leaving without XP, instead of silently ending (and previously, silently
+    // awarding XP anyway).
+    Alert.alert(
+      "Leave the lesson?",
+      "You haven't finished yet — Duo hasn't wrapped up this lesson. If you leave now, you won't earn XP for it.",
+      [
+        { text: "Keep learning", style: "cancel" },
+        {
+          text: "Leave anyway",
+          style: "destructive",
+          onPress: () => void finishAndExit(false),
+        },
+      ],
+    );
+  }, [finishAndExit]);
 
   // ── Rotating hints ───────────────────────────────────────────────────────
   // Hints from the lesson's own chunks/phrases, shown one at a time while the
@@ -869,6 +923,38 @@ function delay(milliseconds: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, milliseconds);
   });
+}
+
+const STRUGGLE_MARKER = "let's practice these again";
+
+// Duo is prompted to say "Let's practice these again: <chunk>, <chunk>" in its
+// wrap-up when something needed all 3 attempts and still wasn't right. This
+// pulls the review ids for whichever of the lesson's own chunks got named
+// there, so those exact items — not a generic due list — surface first in the
+// practice session right after the call. Best-effort: if Duo never says the
+// marker (nothing was missed, or it phrased the wrap-up differently), this
+// simply returns no ids and practice falls back to the normal due/weak mix.
+function extractStruggledChunkIds(agentTranscript: string, lesson: Lesson): string[] {
+  const normalized = agentTranscript.toLowerCase();
+  const markerIndex = normalized.indexOf(STRUGGLE_MARKER);
+  if (markerIndex === -1) return [];
+
+  // Only look at what Duo said shortly after the marker, so a chunk mentioned
+  // much earlier for an unrelated reason doesn't get pulled in by accident.
+  const window = normalized.slice(
+    markerIndex + STRUGGLE_MARKER.length,
+    markerIndex + STRUGGLE_MARKER.length + 200,
+  );
+
+  const chunks = lesson.pedagogy?.targetChunks ?? [];
+  const ids: string[] = [];
+  for (const chunk of chunks) {
+    const term = chunk.text.toLowerCase().replace(/[¿?¡!.,]/g, "").trim();
+    if (term && window.includes(term)) {
+      ids.push(makeReviewId(lesson.id, chunk.id));
+    }
+  }
+  return ids;
 }
 
 // The phrases the learner should try, drawn from the lesson's own content. The

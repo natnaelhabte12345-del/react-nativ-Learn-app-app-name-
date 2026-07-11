@@ -14,6 +14,10 @@ export type UnitId = string;
 
 export type LessonId = string;
 
+// Learning goals the learner picks at onboarding. A1/A2 map to CEFR levels;
+// "travel" is a themed cross-cutting track.
+export type TrackId = "a1" | "a2" | "travel";
+
 export type LessonImageKey =
   | "lessonGreetings"
   | "lessonDailyLife"
