@@ -1,18 +1,8 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import {
-    createJSONStorage,
-    persist,
-    type StateStorage,
-} from "zustand/middleware";
+import { persist } from "zustand/middleware";
 
+import { createAppPersistStorage } from "@/lib/storage";
 import type { LanguageId, TrackId } from "@/types/learning";
-
-const serverStorage: StateStorage = {
-  getItem: () => null,
-  removeItem: () => undefined,
-  setItem: () => undefined,
-};
 
 type LanguageState = {
   hasHydrated: boolean;
@@ -67,9 +57,7 @@ export const useLanguageStore = create<LanguageState>()(
         selectedLanguageId: state.selectedLanguageId,
         trackId: state.trackId,
       }),
-      storage: createJSONStorage(() =>
-        typeof window === "undefined" ? serverStorage : AsyncStorage,
-      ),
+      storage: createAppPersistStorage(),
     },
   ),
 );
