@@ -1,16 +1,7 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import {
-  createJSONStorage,
-  persist,
-  type StateStorage,
-} from "zustand/middleware";
+import { persist } from "zustand/middleware";
 
-const serverStorage: StateStorage = {
-  getItem: () => null,
-  removeItem: () => undefined,
-  setItem: () => undefined,
-};
+import { createAppPersistStorage } from "@/lib/storage";
 
 // Build a YYYY-MM-DD key from local date parts so day boundaries follow the
 // learner's local midnight (not UTC) and stay correct across DST transitions.
@@ -211,9 +202,7 @@ export const useProgressStore = create<ProgressState>()(
           reviewProgress: state.reviewProgress ?? {},
         } as ProgressState;
       },
-      storage: createJSONStorage(() =>
-        typeof window === "undefined" ? serverStorage : AsyncStorage,
-      ),
+      storage: createAppPersistStorage(),
     },
   ),
 );
