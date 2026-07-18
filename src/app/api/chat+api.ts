@@ -158,7 +158,7 @@ export async function POST(request: Request) {
       return jsonError("Invalid learning language.", 400);
     }
 
-    const languageId = body.languageId;
+    // `languageId` is available via `body.languageId` when needed — no local var
 
     const messages = parseMessages(body.messages);
 

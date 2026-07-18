@@ -10,15 +10,15 @@ import { StatusBar } from "expo-status-bar";
 import { usePostHog } from "posthog-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  PermissionsAndroid,
-  Platform,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Image,
+    PermissionsAndroid,
+    Platform,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -26,18 +26,18 @@ import { images } from "@/constants/images";
 import { lessonsById } from "@/data/lessons";
 import { units } from "@/data/units";
 import {
-  trackLessonAbandoned,
-  trackLessonCompleted,
-  trackLessonStarted,
+    trackLessonAbandoned,
+    trackLessonCompleted,
+    trackLessonStarted,
 } from "@/lib/analytics";
-import {
-  createStreamAudioCall,
-  startStreamAudioAgent,
-  stopStreamAudioAgent,
-  type StreamAudioAgentSession,
-  type StreamAudioCallSession,
-} from "@/lib/stream-audio";
 import { makeReviewId } from "@/lib/learning-review";
+import {
+    createStreamAudioCall,
+    startStreamAudioAgent,
+    stopStreamAudioAgent,
+    type StreamAudioAgentSession,
+    type StreamAudioCallSession,
+} from "@/lib/stream-audio";
 import { useProgressStore } from "@/store/progress-store";
 import type { Lesson } from "@/types/learning";
 
@@ -203,10 +203,11 @@ export default function AudioLessonScreen() {
 
   useEffect(() => {
     mountedRef.current = true;
+    const ac = abortControllerRef.current;
     return () => {
       mountedRef.current = false;
       // Cancel any in-flight API requests to prevent memory leaks
-      abortControllerRef.current.abort();
+      if (ac) ac.abort();
       void cleanupRef.current({ resetState: false });
     };
   }, []);
