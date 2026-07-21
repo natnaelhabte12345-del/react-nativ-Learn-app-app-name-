@@ -214,7 +214,7 @@ export default function AudioLessonScreen() {
 
   // Keep the latest practice item index in a ref for the abandonment payload.
   useEffect(() => {
-    if (!lesson || spokenTurns <= 0) return;
+    if (!lesson || spokenTurns <= 0 || lesson.vocabulary.length === 0) return;
     lastQuestionIndexRef.current = Math.min(
       spokenTurns,
       lesson.vocabulary.length - 1,
